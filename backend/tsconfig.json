@@ -3,14 +3,22 @@
   "compilerOptions": {
     "module": "NodeNext",
     "moduleResolution": "nodenext",
-    "lib": ["ES2023"],
-    "types": ["node"],
-    "rootDir": ".",
-    "outDir": "./dist",
+    "lib": [
+      "ES2023"
+    ],
+    "types": [
+      "node"
+    ],
     "noEmit": true,
     "paths": {
-      "@app/shared-types": ["../packages/shared-types/src/index.ts"]
+      "@app/shared-types": [
+        "../packages/shared-types/src/index.ts"
+      ]
     }
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.ts"]
+  "include": [
+    "src/**/*.ts",
+    "tests/**/*.ts",
+    "vitest.config.ts"
+  ]
 }
