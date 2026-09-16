@@ -1,0 +1,15 @@
+{
+  "name": "@app/shared-types",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Wire types shared by frontend and backend. Single source of truth.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

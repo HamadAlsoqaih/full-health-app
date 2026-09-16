@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+# CI is a gate, not a deploy pipeline. Render and Cloudflare Pages auto-deploy from
+# main via their own GitHub integrations (see docs/SETUP.md).
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install
+        run: npm ci
+
+      # Asserts theme.generated.css still matches tokens.ts, so the token file
+      # cannot silently stop being the source of truth.
+      - name: Theme tokens are in sync
+        run: npm run theme:check
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Runs with no secrets configured on purpose: every external dependency sits
+      # behind an injected port, so the suite must pass with zero credentials.
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test

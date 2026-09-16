@@ -1,0 +1,75 @@
+@import 'tailwindcss';
+@import './theme.generated.css';
+
+/*
+ * Base layer: mobile-app conventions that must hold on every screen.
+ * See docs/ARCHITECTURE.md ("Mobile standards").
+ */
+@layer base {
+  html {
+    /* Stops the double-tap-to-zoom delay on taps without disabling pinch zoom. */
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--fh-bg);
+    color: var(--fh-text);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+    /* Prevents the whole page rubber-banding when an inner list is scrolled to its end. */
+    overscroll-behavior-y: contain;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /*
+   * 16px is the floor for anything typed into: iOS Safari zooms the viewport when a
+   * focused control renders below it, which yanks the layout sideways mid-entry.
+   */
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+    font-size: max(1rem, var(--text-base));
+    color: inherit;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--fh-accent);
+    outline-offset: 2px;
+  }
+
+  /* Respect the OS reduced-motion setting rather than animating regardless. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* Safe-area helpers. Without viewport-fit=cover in index.html these resolve to 0. */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .px-safe {
+    padding-left: max(1rem, env(safe-area-inset-left, 0px));
+    padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  }
+  /* Bottom padding for scroll containers sitting behind the fixed tab bar. */
+  .pb-nav {
+    padding-bottom: calc(var(--spacing-nav-h) + env(safe-area-inset-bottom, 0px) + 1rem);
+  }
+}

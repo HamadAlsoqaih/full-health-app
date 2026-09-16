@@ -1,0 +1,29 @@
+{
+  "name": "full-health-app",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Fitness, nutrition and body-composition PWA",
+  "license": "UNLICENSED",
+  "workspaces": [
+    "packages/*",
+    "backend",
+    "frontend"
+  ],
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "theme:check": "npm run theme:check --workspace frontend",
+    "dev": "npm run dev --workspace backend & npm run dev --workspace frontend"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2",
+    "typescript": "~5.9.3"
+  }
+}
