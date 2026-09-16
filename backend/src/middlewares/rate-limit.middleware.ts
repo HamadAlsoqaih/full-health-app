@@ -15,8 +15,8 @@
  * exhaustion, not to withstand a determined attacker — but it is not durable, and a
  * multi-instance deployment would need a shared store.
  */
-import type { RequestHandler } from 'express';
-import rateLimit, { type Options } from 'express-rate-limit';
+import type { Request, RequestHandler } from 'express';
+import rateLimit, { ipKeyGenerator, type Options } from 'express-rate-limit';
 import type { ApiError } from '@app/shared-types';
 import { config } from '../config/index.js';
 import { aiQuotaExhausted } from '../errors.js';
@@ -25,15 +25,31 @@ const rateLimitedBody: ApiError = {
   error: { code: 'RATE_LIMITED', message: 'Too many requests. Try again shortly.' },
 };
 
+/**
+ * Per user when authenticated, per IP otherwise.
+ *
+ * Keying by user matters because everyone behind one NAT would otherwise share a
+ * bucket. But the IP fallback must go through `ipKeyGenerator`, not use `req.ip`
+ * raw: an IPv6 client is typically handed a /128 out of a /64 it controls
+ * entirely, so keying on the full address lets it rotate through billions of
+ * distinct keys and bypass the limit completely. `ipKeyGenerator` collapses the
+ * address to its subnet so the limit applies to the party that actually owns it.
+ *
+ * IPv4 is unaffected — it is returned as-is.
+ */
+export function rateLimitKey(req: Request): string {
+  const userId = req.user?.id;
+  if (userId) return `user:${userId}`;
+  return `ip:${ipKeyGenerator(req.ip ?? 'unknown')}`;
+}
+
 function make(overrides: Partial<Options>): RequestHandler {
   return rateLimit({
     windowMs: 60_000,
     limit: 60,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
-    // Per user when authenticated, per IP otherwise. Without this, everyone behind
-    // one NAT shares a bucket.
-    keyGenerator: (req) => req.user?.id ?? req.ip ?? 'unknown',
+    keyGenerator: rateLimitKey,
     message: rateLimitedBody,
     // Limits are a nuisance in tests, not the thing under test.
     skip: () => config.isTest,
