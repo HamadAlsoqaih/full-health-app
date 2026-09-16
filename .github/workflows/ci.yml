@@ -42,3 +42,32 @@ jobs:
 
       - name: Test
         run: npm test
+
+  # Row-level security is the one protection the credential-free Vitest suite
+  # cannot cover, because there is no live Postgres there to evaluate auth.uid()
+  # against. This job applies the migration to a real Postgres and asserts the
+  # policies isolate tenants. It needs no Supabase project and no secrets.
+  schema:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Verify schema, constraints and row-level security
+        env:
+          PGHOST: localhost
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: ./backend/supabase/verify-migration.sh
