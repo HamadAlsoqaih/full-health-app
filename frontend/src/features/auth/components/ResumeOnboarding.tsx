@@ -40,22 +40,35 @@ export function ResumeOnboarding({ goalsSubmitted, statsSubmitted }: ResumeOnboa
   const { draft, markSubmitted } = useOnboarding();
 
   const [error, setError] = useState<unknown>();
-  // Guards against a second attempt if the effect re-runs before the profile
-  // refetch lands, which would otherwise double-submit.
-  const attempted = useRef(false);
+
+  /**
+   * Which steps have already been attempted, tracked PER STEP.
+   *
+   * This was a single boolean, and that hung the app permanently on the spinner.
+   * The two writes are necessarily sequential: stats can only be submitted once
+   * the server reports goals as landed, which it only does after the profile
+   * refetch that follows the goals write. So the stats attempt always happens on
+   * a later run of this effect than the goals attempt — and a single flag set by
+   * the first run blocked the second one forever. The user sat on "Loading your
+   * account…" with nothing in flight and no error to show.
+   */
+  const attempted = useRef({ goals: false, stats: false });
 
   const canResumeGoals = !goalsSubmitted && Boolean(draft.goals);
   const canResumeStats = goalsSubmitted && !statsSubmitted && Boolean(draft.stats);
 
   useEffect(() => {
-    if (attempted.current) return;
-    if (!canResumeGoals && !canResumeStats) return;
+    const doGoals = canResumeGoals && !attempted.current.goals;
+    const doStats = canResumeStats && !attempted.current.stats;
+    if (!doGoals && !doStats) return;
 
-    attempted.current = true;
+    // Claimed before awaiting, so a re-render mid-flight cannot double-submit.
+    if (doGoals) attempted.current.goals = true;
+    if (doStats) attempted.current.stats = true;
 
     void (async () => {
       try {
-        if (canResumeGoals && draft.goals) {
+        if (doGoals && draft.goals) {
           await submitGoals.mutateAsync({
             ...draft.goals,
             ...(draft.dietaryPrefs ? { dietaryPrefs: draft.dietaryPrefs } : {}),
@@ -63,7 +76,7 @@ export function ResumeOnboarding({ goalsSubmitted, statsSubmitted }: ResumeOnboa
           markSubmitted('goals');
         }
 
-        if (canResumeStats && draft.stats) {
+        if (doStats && draft.stats) {
           // The id was minted when the stats were captured, so this retry cannot
           // create a second measurement even if an earlier attempt half-succeeded.
           await bodyCompositionApi(client).createEntry({
@@ -76,11 +89,15 @@ export function ResumeOnboarding({ goalsSubmitted, statsSubmitted }: ResumeOnboa
           markSubmitted('stats');
         }
 
-        // The router re-reads progress from this and moves the user on.
+        // The router re-reads progress from this and moves the user on. It is
+        // also what makes the next step possible: until it lands the server
+        // still reports goals as outstanding.
         await queryClient.invalidateQueries({ queryKey: queryKeys.me });
       } catch (caught) {
-        // Reset so the user can retry rather than being stuck on a spinner.
-        attempted.current = false;
+        // Release only the steps this run claimed, so Retry re-attempts exactly
+        // what failed rather than repeating a write that already succeeded.
+        if (doGoals) attempted.current.goals = false;
+        if (doStats) attempted.current.stats = false;
         setError(caught);
       }
     })();
@@ -102,10 +119,7 @@ export function ResumeOnboarding({ goalsSubmitted, statsSubmitted }: ResumeOnboa
       <ErrorState
         error={error}
         title="Could not finish setting up"
-        onRetry={() => {
-          setError(undefined);
-          attempted.current = false;
-        }}
+        onRetry={() => setError(undefined)}
       />
     );
   }

@@ -344,6 +344,107 @@ describe('resume after the app was closed mid-submit', () => {
     expect(await screen.findByRole('navigation', { name: /main/i })).toBeInTheDocument();
   });
 
+  it('submits BOTH outstanding writes, one after the other', async () => {
+    /**
+     * The state this reproduces, and the bug it caught:
+     *
+     * The project requires email confirmation, so signUp returns a user but no
+     * session — neither post-signup write can run. The user confirms, logs in,
+     * and arrives with `goalsSubmitted: false` AND `startingStatsSubmitted:
+     * false`, with both answers still in the draft. Two writes outstanding.
+     *
+     * Every other resume test starts from `goalsSubmitted: true`, i.e. one write
+     * outstanding, and they all passed. With two, the app hung on the spinner
+     * forever: the writes are necessarily sequential — stats is only permitted
+     * once the server reports goals as landed, which happens on the profile
+     * refetch AFTER the goals write — and a single "already attempted" flag set
+     * by the goals run blocked the stats run on every subsequent effect pass.
+     * Nothing in flight, no error shown, no way out.
+     */
+    localStorage.setItem(
+      'fha.onboarding.draft.v1',
+      JSON.stringify({
+        v: 1,
+        goals: { goal: 'bulk', targetCalories: 2900, targetProteinG: 170 },
+        stats: { weightKg: 74.5, bodyFatPct: 15 },
+        statsClientId: 'resume-both-client-id',
+        submitted: { goals: false, stats: false },
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+
+    // Advances exactly as the server would: each write flips its own flag, and
+    // completion is only reported once both have landed.
+    const progress = { goalsSubmitted: false, startingStatsSubmitted: false, complete: false };
+
+    const { requests } = renderApp({
+      session: SESSION,
+      routes: [
+        {
+          match: '/api/users/me/onboarding',
+          method: 'POST',
+          response: () => {
+            progress.goalsSubmitted = true;
+            return makeUser({ onboarding: { ...progress } });
+          },
+        },
+        {
+          match: '/api/body-composition/entry',
+          method: 'POST',
+          status: 201,
+          response: () => {
+            progress.startingStatsSubmitted = true;
+            progress.complete = true;
+            return {
+              id: 'bm-1',
+              clientId: 'resume-both-client-id',
+              date: '2026-03-01',
+              weightKg: 74.5,
+              createdAt: '',
+            };
+          },
+        },
+        {
+          match: '/api/users/me',
+          method: 'GET',
+          response: () => makeUser({ onboarding: { ...progress } }),
+        },
+        {
+          match: '/api/overview',
+          response: {
+            date: '2026-03-01',
+            calories: { logged: 0 },
+            macros: { proteinG: 0, carbsG: 0, fatG: 0 },
+            evaluation: { status: 'none' },
+            pendingSyncCount: 0,
+          },
+        },
+      ],
+    });
+
+    // Goals first.
+    await waitFor(() => {
+      expect(requests.some((r) => r.url.includes('/api/users/me/onboarding'))).toBe(true);
+    });
+
+    // Then stats — this is the one that never fired.
+    await waitFor(() => {
+      expect(requests.some((r) => r.url.includes('/api/body-composition/entry'))).toBe(true);
+    });
+
+    // And the user actually arrives, rather than sitting on the spinner.
+    expect(await screen.findByRole('navigation', { name: /main/i })).toBeInTheDocument();
+
+    // Neither answer was retyped, and neither was sent twice.
+    const goalsWrites = requests.filter((r) => r.url.includes('/api/users/me/onboarding'));
+    const statsWrites = requests.filter((r) => r.url.includes('/api/body-composition/entry'));
+    expect(goalsWrites).toHaveLength(1);
+    expect(statsWrites).toHaveLength(1);
+
+    expect((goalsWrites[0]?.body as { goals: { goal: string } }).goals.goal).toBe('bulk');
+    expect((statsWrites[0]?.body as { weightKg: number }).weightKg).toBe(74.5);
+  });
+
   it('does not resubmit goals that already landed', async () => {
     localStorage.setItem(
       'fha.onboarding.draft.v1',
