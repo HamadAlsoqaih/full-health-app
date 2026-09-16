@@ -14,48 +14,69 @@
  */
 import { z } from 'zod';
 
+/**
+ * Treats an empty string as "not set".
+ *
+ * This is load-bearing, not tidiness. `.optional()` only accepts `undefined`, so
+ * a variable that is PRESENT BUT BLANK — exactly what you get from copying
+ * .env.example, where every optional key is listed with no value — would fail
+ * `.min(1)` and throw at import time. That would crash the process on boot over
+ * an unset optional key, which is the precise opposite of this module's whole
+ * premise: a missing credential must degrade one feature, never stop the app.
+ *
+ * Applied to defaulted fields too, so a blanked-out numeric falls back to its
+ * default instead of coercing to 0 and failing a `.positive()` check.
+ */
+const blank = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    schema,
+  );
+
 const rawSchema = z.object({
-  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  PORT: z.coerce.number().int().positive().default(8080),
-  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+  NODE_ENV: blank(z.enum(['development', 'test', 'production']).default('development')),
+  PORT: blank(z.coerce.number().int().positive().default(8080)),
+  LOG_LEVEL: blank(z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info')),
   /** Comma-separated list of allowed browser origins. */
-  CORS_ORIGINS: z.string().default('http://localhost:5173'),
+  CORS_ORIGINS: blank(z.string().default('http://localhost:5173')),
 
   // Supabase. The anon key is used with the caller's JWT so row-level security
   // applies; the service-role key bypasses RLS and is confined to the few
   // operations that have no user JWT. See config/supabaseAdmin.ts.
-  SUPABASE_URL: z.string().url().optional(),
-  SUPABASE_ANON_KEY: z.string().min(1).optional(),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
+  SUPABASE_URL: blank(z.string().url().optional()),
+  SUPABASE_ANON_KEY: blank(z.string().min(1).optional()),
+  SUPABASE_SERVICE_ROLE_KEY: blank(z.string().min(1).optional()),
 
   // AI. 'stub' is a real, deterministic provider used by tests and by any
   // deployment without a key — not a placeholder that throws.
-  AI_PROVIDER: z.enum(['gemini', 'groq', 'stub']).default('stub'),
-  GEMINI_API_KEY: z.string().min(1).optional(),
-  GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
-  GROQ_API_KEY: z.string().min(1).optional(),
-  GROQ_MODEL: z.string().default('llama-3.3-70b-versatile'),
+  AI_PROVIDER: blank(z.enum(['gemini', 'groq', 'stub']).default('stub')),
+  GEMINI_API_KEY: blank(z.string().min(1).optional()),
+  GEMINI_MODEL: blank(z.string().default('gemini-2.5-flash')),
+  GROQ_API_KEY: blank(z.string().min(1).optional()),
+  GROQ_MODEL: blank(z.string().default('llama-3.3-70b-versatile')),
   /**
    * Account-wide daily ceiling on AI vision calls. The upstream free-tier quota is
    * shared by every user of this deployment, so without a global counter one user
    * can exhaust the whole app's allowance.
    */
-  AI_VISION_DAILY_LIMIT: z.coerce.number().int().positive().default(1200),
+  AI_VISION_DAILY_LIMIT: blank(z.coerce.number().int().positive().default(1200)),
 
-  USDA_FDC_API_KEY: z.string().min(1).optional(),
+  USDA_FDC_API_KEY: blank(z.string().min(1).optional()),
 
-  SENTRY_DSN: z.string().optional(),
-  SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0),
+  SENTRY_DSN: blank(z.string().min(1).optional()),
+  SENTRY_TRACES_SAMPLE_RATE: blank(z.coerce.number().min(0).max(1).default(0)),
 
-  ONESIGNAL_APP_ID: z.string().min(1).optional(),
-  ONESIGNAL_API_KEY: z.string().min(1).optional(),
+  ONESIGNAL_APP_ID: blank(z.string().min(1).optional()),
+  ONESIGNAL_API_KEY: blank(z.string().min(1).optional()),
 
   /** Upload ceiling for meal photos, bytes. Unbounded multipart is a trivial DoS. */
-  PHOTO_MAX_BYTES: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(8 * 1024 * 1024),
+  PHOTO_MAX_BYTES: blank(
+    z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(8 * 1024 * 1024),
+  ),
 });
 
 export type RawEnv = z.infer<typeof rawSchema>;
