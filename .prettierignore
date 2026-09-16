@@ -3,3 +3,8 @@ dist/
 coverage/
 package-lock.json
 *.generated.css
+
+# Vendor deploy config, authored by hand. Prettier formats .jsonc as
+# comma-tolerant JSON and wants to add a trailing comma, which is a change to a
+# file Wrangler parses — not worth risking a deploy over formatting.
+frontend/wrangler.jsonc
