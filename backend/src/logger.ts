@@ -38,4 +38,38 @@ export const logger = pino({
   base: { service: 'full-health-api' },
 });
 
+/** The subset of a request the serializer below reads. */
+interface LoggableRequest {
+  id?: unknown;
+  method?: string | undefined;
+  url?: string | undefined;
+  headers?: unknown;
+}
+
+/**
+ * What gets logged about a request.
+ *
+ * Replaces pino-http's default, which logs `url` with its query string attached
+ * and `query` as a parsed object. The `redact` list above cannot help there: it
+ * works on known paths, and a query string is opaque to it.
+ *
+ * Two consequences that made this worth replacing. `GET /nutrition/search?q=…`
+ * logged the user's own search term — health-adjacent, and squarely inside what
+ * this file says must never be logged. And any credential a future endpoint
+ * accepted in a query would have been logged in full, with nothing in the code
+ * for anyone to notice.
+ *
+ * The path alone is what is actually useful for tracing a request. Route
+ * parameters are dropped for the same reason: an id identifies a person's row.
+ */
+export function serializeRequest(req: LoggableRequest): Record<string, unknown> {
+  return {
+    id: req.id,
+    method: req.method,
+    path: req.url?.split('?')[0],
+    // Sensitive headers are handled by `redact` above.
+    headers: req.headers,
+  };
+}
+
 export type Logger = typeof logger;

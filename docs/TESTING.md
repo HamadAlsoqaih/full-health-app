@@ -1,9 +1,9 @@
 # Testing
 
 ```bash
-npm test                              # both workspaces
-npm test --workspace backend          # 136 tests
-npm test --workspace frontend         # 31 tests
+npm test                              # both workspaces — 246 tests
+npm test --workspace backend          # 178 tests
+npm test --workspace frontend         # 68 tests
 ./backend/supabase/verify-migration.sh  # 22 schema/RLS assertions (needs Postgres)
 ```
 
@@ -19,15 +19,22 @@ test anything would have had no tests at all.
 | File                                                        | Tests | Covers                                             |
 | ----------------------------------------------------------- | ----- | -------------------------------------------------- |
 | `backend/tests/unit/trend-rules.test.ts`                    | 23    | The trend algorithm                                |
+| `backend/tests/unit/config.test.ts`                         | 21    | Blank env vars, malformed values, URL shape        |
 | `backend/tests/unit/food-database.test.ts`                  | 14    | USDA + Open Food Facts parsing                     |
-| `backend/tests/unit/parse-estimate.test.ts`                 | 11    | AI response parsing                                |
+| `backend/tests/unit/parse-estimate.test.ts`                 | 10    | AI response parsing                                |
+| `backend/tests/unit/rate-limit-key.test.ts`                 | 9     | Per-user keying, IPv6 subnet collapsing            |
+| `backend/tests/unit/logger.test.ts`                         | 5     | What request logging retains                       |
 | `backend/tests/integration/auth.test.ts`                    | 38    | Auth, gating, mass assignment, onboarding progress |
+| `backend/tests/integration/overview-and-evaluation.test.ts` | 21    | Aggregation, the caller's date, evaluation, reaper |
+| `backend/tests/integration/nutrition.test.ts`               | 14    | Cache-first, never-auto-log, daily log             |
 | `backend/tests/integration/offline-sync.test.ts`            | 12    | Idempotency across all four queued writes          |
 | `backend/tests/integration/routines.test.ts`                | 8     | CRUD, cross-user isolation, history preservation   |
-| `backend/tests/integration/nutrition.test.ts`               | 14    | Cache-first, never-auto-log, daily log             |
-| `backend/tests/integration/overview-and-evaluation.test.ts` | 17    | Aggregation, evaluation lifecycle, reaper          |
+| `backend/tests/integration/startup.smoke.test.ts`           | 3     | A real process booting, from `.env` alone          |
+| `frontend/tests/tabs-render.test.tsx`                       | 23    | All five tabs: full, empty and failing payloads    |
 | `frontend/tests/onboarding-flow.test.tsx`                   | 17    | The full flow, draft persistence, resume           |
 | `frontend/tests/offline-queue.test.ts`                      | 14    | Outbox ordering, drop and retry semantics          |
+| `frontend/tests/workout-player.test.tsx`                    | 8     | Per-set logging, skipped sets, discard guard       |
+| `frontend/tests/dates.test.ts`                              | 6     | Local calendar dates across timezones and DST      |
 | `backend/supabase/verify-schema.sql`                        | 22    | Constraints, RLS policies, cascades                |
 
 ---

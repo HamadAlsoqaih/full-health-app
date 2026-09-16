@@ -8,7 +8,7 @@ import express, { type Express } from 'express';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 import { config } from './config/index.js';
-import { logger } from './logger.js';
+import { logger, serializeRequest } from './logger.js';
 import type { AppDeps } from './ports.js';
 import { createRouter } from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middlewares/error-handler.middleware.js';
@@ -51,6 +51,8 @@ export function createApp(deps: AppDeps): Express {
         logger,
         // Health checks are hit constantly by the host's own monitor.
         autoLogging: { ignore: (req) => req.url === '/api/health' },
+        // See logger.ts: the default serializer logs query strings.
+        serializers: { req: serializeRequest },
       }),
     );
   }

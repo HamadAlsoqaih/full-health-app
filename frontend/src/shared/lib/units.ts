@@ -6,13 +6,15 @@
  * Nothing downstream — no API call, no database column, no trend calculation —
  * ever sees an imperial number.
  *
- * Factors are exact by definition, not approximations.
+ * Both factors are exact by definition — one inch is 2.54 cm and one pound is
+ * 0.45359237 kg — so the pound factor is written that way round rather than as a
+ * rounded 2.2046… reciprocal.
  */
-const LB_PER_KG = 2.20462262185;
+const KG_PER_LB = 0.45359237;
 const CM_PER_IN = 2.54;
 
-export const kgToLb = (kg: number): number => kg * LB_PER_KG;
-export const lbToKg = (lb: number): number => lb / LB_PER_KG;
+export const kgToLb = (kg: number): number => kg / KG_PER_LB;
+export const lbToKg = (lb: number): number => lb * KG_PER_LB;
 export const cmToIn = (cm: number): number => cm / CM_PER_IN;
 export const inToCm = (inches: number): number => inches * CM_PER_IN;
 

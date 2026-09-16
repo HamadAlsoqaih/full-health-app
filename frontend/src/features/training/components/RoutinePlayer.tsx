@@ -32,6 +32,7 @@ export function RoutinePlayer({ routine, onFinish }: RoutinePlayerProps) {
   const toast = useToast();
   const logWorkout = useLogWorkout();
   const [startedAt] = useState(() => Date.now());
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
 
   const [state, setState] = useState<SetState[][]>(() =>
     routine.exercises.map((exercise) =>
@@ -173,12 +174,50 @@ export function RoutinePlayer({ routine, onFinish }: RoutinePlayerProps) {
         className="sticky z-20 flex flex-col gap-2 border-t border-border bg-bg py-3"
         style={{ bottom: 'calc(var(--spacing-nav-h) + env(safe-area-inset-bottom, 0px))' }}
       >
-        <Button onClick={() => void finish()} loading={logWorkout.isPending}>
-          Finish workout
-        </Button>
-        <Button variant="ghost" onClick={onFinish}>
-          Discard
-        </Button>
+        {confirmingDiscard ? (
+          /*
+           * Discard asks first, because it sits directly beneath "Finish
+           * workout" in the thumb zone and one mistap would silently throw away
+           * a whole session's entered sets, with no undo and nothing written
+           * anywhere to recover from.
+           *
+           * An inline confirmation rather than window.confirm: a native dialog
+           * looks like a web page in an installed app, and its wording is not
+           * ours to write.
+           */
+          <div
+            role="alertdialog"
+            aria-label="Discard this workout?"
+            className="flex flex-col gap-2"
+          >
+            <p className="text-sm text-text">
+              Discard this workout? {completedCount} of {totalCount} sets are ticked off and nothing
+              has been saved yet.
+            </p>
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={() => setConfirmingDiscard(false)}>
+                Keep going
+              </Button>
+              <Button variant="danger" onClick={onFinish}>
+                Discard
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <Button onClick={() => void finish()} loading={logWorkout.isPending}>
+              Finish workout
+            </Button>
+            <Button
+              variant="ghost"
+              // Nothing entered yet means nothing to lose, so the confirmation
+              // would just be friction.
+              onClick={() => (completedCount === 0 ? onFinish() : setConfirmingDiscard(true))}
+            >
+              Discard
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );

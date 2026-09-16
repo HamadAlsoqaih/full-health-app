@@ -324,11 +324,18 @@ blocks on the AI call.
 
 ## Overview
 
-### `GET /api/overview` → `OverviewSummary`
+### `GET /api/overview?date=YYYY-MM-DD` → `OverviewSummary`
 
 One aggregated response — today's calories against target, macros, next routine,
 last workout, the body-composition trend and the evaluation status. The dashboard
 reads only this, which is what keeps its numbers mutually consistent.
+
+`date` is optional and is **the caller's** calendar date. It exists because the
+server's clock is UTC and a user's day is not: in Riyadh the UTC date is still
+yesterday until 03:00, and in New York it is already tomorrow from 19:00, so a
+server-derived "today" totalled the wrong day's food for everyone outside UTC.
+The client knows its own timezone and says which day it means. Omitting it falls
+back to the server's UTC date.
 
 `calories.remaining` may be negative: someone over their target should see by how
 much. `pendingSyncCount` is always 0 from the server; the client fills it in from
