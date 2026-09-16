@@ -12,6 +12,7 @@
  * point of use with a message naming the missing variable. A missing key degrades one
  * feature; it never takes down the process.
  */
+import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
@@ -25,8 +26,16 @@ import { z } from 'zod';
  * added later. Putting it in server.ts alone would leave the scripts unable to
  * see their own configuration.
  *
- * The path is resolved relative to THIS FILE, not the working directory, so the
- * lookup does not depend on where npm happened to invoke the process from.
+ * Several candidate paths are tried because this module runs from two different
+ * places. From source it sits at backend/src/config/, so backend/.env is two
+ * levels up; in the esbuild bundle it is backend/dist/server.js, where two
+ * levels up is the repository root instead. Resolving a single relative path
+ * would therefore work in development and silently read the wrong file — or
+ * nothing at all — from a built artifact.
+ *
+ * The working directory is checked first, since npm sets it to the workspace
+ * root for workspace scripts and that is what a developer running the app
+ * expects to win.
  *
  * Two deliberate behaviours:
  *
@@ -38,14 +47,26 @@ import { z } from 'zod';
  *   passes with no credentials; letting a developer's real .env bleed in would
  *   quietly change what the tests exercise on their machine versus in CI.
  */
-if (process.env.NODE_ENV !== 'test') {
-  dotenv.config({
-    path: resolve(dirname(fileURLToPath(import.meta.url)), '../../.env'),
+function loadDotEnv(): void {
+  if (process.env.NODE_ENV === 'test') return;
+
+  const here = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    resolve(process.cwd(), '.env'), // npm workspace script: cwd is backend/
+    resolve(here, '../../.env'), // from source: backend/src/config/
+    resolve(here, '../.env'), // from the bundle: backend/dist/
+  ];
+
+  for (const path of candidates) {
+    if (!existsSync(path)) continue;
     // A missing .env is normal in production, where the host supplies the
-    // variables directly. Not an error, and not worth a warning.
-    quiet: true,
-  });
+    // variables directly — so this is not an error and not worth a warning.
+    dotenv.config({ path, quiet: true });
+    return;
+  }
 }
+
+loadDotEnv();
 
 /**
  * Treats an empty string as "not set".
