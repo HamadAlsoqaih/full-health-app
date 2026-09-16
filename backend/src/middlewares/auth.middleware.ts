@@ -79,13 +79,6 @@ export function requireAuth(deps: AppDeps): RequestHandler {
  * Builds unauthenticated repositories for the few public endpoints that still need
  * database access (registration writing the public user mirror).
  */
-export function attachAnonymousRepos(deps: AppDeps): RequestHandler {
-  return (req, _res, next) => {
-    req.repos = deps.repositories({ db: {}, clock: deps.clock, uuid: deps.uuid });
-    next();
-  };
-}
-
 /** Narrows `req.user` for handlers mounted behind requireAuth. */
 export function currentUser(req: { user?: AuthenticatedUser }): AuthenticatedUser {
   if (!req.user) {

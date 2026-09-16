@@ -16,7 +16,7 @@ import multer from 'multer';
 import { config } from '../config/index.js';
 import { unsupportedMediaType } from '../errors.js';
 import type { AppDeps } from '../ports.js';
-import { attachAnonymousRepos, requireAuth } from '../middlewares/auth.middleware.js';
+import { requireAuth } from '../middlewares/auth.middleware.js';
 import { idempotency, replayFinders } from '../middlewares/idempotency.middleware.js';
 import {
   authLimiter,
@@ -94,27 +94,9 @@ export function createRouter(deps: AppDeps): Router {
   // /auth — the only unauthenticated routes, except logout.
   // -------------------------------------------------------------------------
   const authRouter = Router();
-  authRouter.post(
-    '/register',
-    authLimiter,
-    validate(credentialsSchema),
-    attachAnonymousRepos(deps),
-    authController.register,
-  );
-  authRouter.post(
-    '/login',
-    authLimiter,
-    validate(credentialsSchema),
-    attachAnonymousRepos(deps),
-    authController.login,
-  );
-  authRouter.post(
-    '/refresh',
-    authLimiter,
-    validate(refreshSchema),
-    attachAnonymousRepos(deps),
-    authController.refresh,
-  );
+  authRouter.post('/register', authLimiter, validate(credentialsSchema), authController.register);
+  authRouter.post('/login', authLimiter, validate(credentialsSchema), authController.login);
+  authRouter.post('/refresh', authLimiter, validate(refreshSchema), authController.refresh);
   // Authenticated, unlike its siblings: it needs to know whose session to end.
   authRouter.post('/logout', auth, authController.logout);
   router.use('/auth', authRouter);

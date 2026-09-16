@@ -3,11 +3,29 @@
  *
  * Registration and login both call ensureUserRow, so the public profile mirror
  * exists before any other endpoint needs it.
+ *
+ * These three handlers are the one place in the app that must build their own
+ * repositories rather than taking the ones the middleware attached.
+ *
+ * Why: /auth/register, /auth/login and /auth/refresh are unauthenticated routes,
+ * so there is no bearer token on the way in and the attached repositories carry
+ * no JWT. But by the time the handler runs it has just minted a session — and
+ * every database call it then makes (creating the profile mirror, reading it
+ * back) is a call on that user's own rows, which row-level security only permits
+ * when `auth.uid()` resolves. With the anonymous handle `auth.uid()` is NULL and
+ * Postgres rejects the insert with 42501, so registration and login failed
+ * outright against a real Supabase project.
+ *
+ * The fix is to scope the repositories to the token that was just issued. The
+ * alternative — reaching for the service-role key, which bypasses RLS — would
+ * have worked too and is worse: it makes the policies decorative on the busiest
+ * write path in the app, and there is no need for it when the caller's own
+ * identity is right here.
  */
 import type { RequestHandler } from 'express';
 import type { AuthResult, AuthSession } from '@app/shared-types';
 import type { AppDeps } from '../ports.js';
-import { currentRepos, currentUser } from '../middlewares/auth.middleware.js';
+import { currentUser } from '../middlewares/auth.middleware.js';
 import { ensureUserRow, getMe } from '../services/users/users.service.js';
 import { unauthenticated } from '../errors.js';
 
@@ -24,13 +42,22 @@ const toSession = (tokens: {
 });
 
 export function makeAuthController(deps: AppDeps) {
+  /**
+   * Repositories acting as the user who just signed in.
+   *
+   * Built here rather than by the middleware because the token does not exist
+   * until the auth call returns.
+   */
+  const reposForToken = (accessToken: string) =>
+    deps.repositories({ db: { accessToken }, clock: deps.clock, uuid: deps.uuid });
+
   const register: RequestHandler = (req, res, next) => {
     void (async () => {
       try {
         const { email, password } = req.body as { email: string; password: string };
         const { user, tokens } = await deps.auth.register(email, password);
 
-        const repos = currentRepos(req);
+        const repos = reposForToken(tokens.accessToken);
         await ensureUserRow(repos, user.id, user.email);
 
         const body: AuthResult = {
@@ -50,7 +77,7 @@ export function makeAuthController(deps: AppDeps) {
         const { email, password } = req.body as { email: string; password: string };
         const { user, tokens } = await deps.auth.login(email, password);
 
-        const repos = currentRepos(req);
+        const repos = reposForToken(tokens.accessToken);
         await ensureUserRow(repos, user.id, user.email);
 
         const body: AuthResult = {
@@ -74,7 +101,7 @@ export function makeAuthController(deps: AppDeps) {
       try {
         const { refreshToken } = req.body as { refreshToken: string };
         const { user, tokens } = await deps.auth.refresh(refreshToken);
-        const repos = currentRepos(req);
+        const repos = reposForToken(tokens.accessToken);
         await ensureUserRow(repos, user.id, user.email);
         const body: AuthResult = {
           user: await getMe(repos, user.id),
