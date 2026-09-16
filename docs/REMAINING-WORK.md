@@ -50,6 +50,19 @@ resulting player id to `settingsApi.registerPush`, which is already written.
 
 ## 3. Could not be verified from the build environment
 
+**Run `npm run check:services` on a machine that has the credentials.** It calls
+every external service once and prints pass/fail per service — Supabase auth,
+every table the schema needs, Gemini vision and text, Groq, USDA, Open Food
+Facts, OneSignal, and the exercise seed source. It is a diagnostic, not a test:
+it needs credentials and network, so it is deliberately not in `npm test` or CI.
+
+That script exists because the gap below is not hypothetical. It hid three real
+faults: signup and login refused by row-level security, a Gemini model retired
+for new API keys, and an onboarding hang that only occurs after a real login.
+None appeared in 250 passing tests, because the suite runs with no credentials
+and no network by design. Reading the code does not catch this class of fault;
+only asking the real service does.
+
 These are written and type-checked, and their parsing logic is unit-tested against
 checked-in fixtures, but **no call has ever reached the real service**:
 

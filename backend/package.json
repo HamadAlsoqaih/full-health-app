@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "seed:exercises": "tsx src/scripts/seed-exercises.ts"
+    "seed:exercises": "tsx src/scripts/seed-exercises.ts",
+    "check:services": "tsx src/scripts/check-services.ts"
   },
   "dependencies": {
     "@app/shared-types": "*",

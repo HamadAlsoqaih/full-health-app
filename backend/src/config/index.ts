@@ -136,7 +136,25 @@ const rawSchema = z.object({
   // deployment without a key — not a placeholder that throws.
   AI_PROVIDER: blank(z.enum(['gemini', 'groq', 'stub']).default('stub')),
   GEMINI_API_KEY: blank(z.string().min(1).optional()),
-  GEMINI_MODEL: blank(z.string().default('gemini-2.5-flash')),
+  /**
+   * Which Gemini model to call.
+   *
+   * The previous default, `gemini-2.5-flash`, broke every photo scan with a 404
+   * and this message from Google: "This model models/gemini-2.5-flash is no
+   * longer available to new users. Please update your code to use
+   * models/gemini-3.6-flash."
+   *
+   * The trap worth knowing: a retired model still appears in the
+   * `GET /v1beta/models` listing, so "is the model there?" is not a valid check.
+   * It is listed for keys that already used it and refused for new ones.
+   *
+   * `gemini-3.6-flash` is what Google's own error names, so that is the default
+   * rather than a guess. Set `gemini-flash-latest` instead if you would rather
+   * never hit a retirement again — it tracks whatever the current Flash is, at
+   * the cost of the model changing under you without notice. Pinned is the safer
+   * default; `npm run check:services` tells you within seconds if it retires.
+   */
+  GEMINI_MODEL: blank(z.string().default('gemini-3.6-flash')),
   GROQ_API_KEY: blank(z.string().min(1).optional()),
   GROQ_MODEL: blank(z.string().default('llama-3.3-70b-versatile')),
   /**

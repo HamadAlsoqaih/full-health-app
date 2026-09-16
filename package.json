@@ -20,6 +20,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "theme:check": "npm run theme:check --workspace frontend",
+    "check:services": "npm run check:services --workspace backend",
     "dev": "concurrently --names api,web --prefix-colors blue,magenta \"npm:dev:api\" \"npm:dev:web\"",
     "dev:api": "npm run dev --workspace backend",
     "dev:web": "npm run dev --workspace frontend"
