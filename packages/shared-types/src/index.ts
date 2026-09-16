@@ -142,7 +142,15 @@ export interface AuthUser {
 export interface UserUpdateInput {
   displayName?: string;
   units?: UnitSystem;
-  preferences?: Partial<UserPreferences>;
+  /**
+   * Nested groups are individually partial, matching the endpoint's schema: a
+   * client may send one toggle without restating the rest, and the server merges
+   * it over the stored values.
+   */
+  preferences?: {
+    notifications?: Partial<NotificationPreferences>;
+    ai?: Partial<AiPreferences>;
+  };
   goals?: Goals;
 }
 
