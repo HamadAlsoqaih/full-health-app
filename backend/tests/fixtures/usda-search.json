@@ -1,0 +1,24 @@
+{
+  "foods": [
+    {
+      "fdcId": 169705,
+      "description": "Oats, rolled, dry",
+      "servingSize": 40,
+      "servingSizeUnit": "g",
+      "foodNutrients": [
+        { "nutrientNumber": "208", "value": 379 },
+        { "nutrientNumber": "203", "value": 13.2 },
+        { "nutrientNumber": "204", "value": 6.52 },
+        { "nutrientNumber": "205", "value": 67.7 },
+        { "nutrientNumber": "291", "value": 10.1 }
+      ]
+    },
+    {
+      "fdcId": 2103037,
+      "description": "  OAT MILK  ",
+      "brandName": "Some Brand",
+      "brandOwner": "Some Owner LLC",
+      "foodNutrients": [{ "nutrientNumber": "208", "value": 46 }]
+    }
+  ]
+}

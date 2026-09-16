@@ -455,8 +455,13 @@ export function createFakeRepositories(store: FakeStore, ctx: RepositoryContext)
       async claimForRun(id, staleBefore, maxAttempts) {
         const row = store.evaluations.find((e) => e.id === id);
         if (!row || row.status !== 'pending' || row.attempts >= maxAttempts) return null;
-        const since = new Date(row.startedAt ?? row.createdAt);
-        if (since >= staleBefore) return null;
+        // The staleness gate applies to RETRIES only. A row that has never been
+        // attempted is claimable at once, otherwise the very first run could never
+        // start — it would have to wait to become stale first.
+        if (row.attempts > 0) {
+          const since = new Date(row.startedAt ?? row.createdAt);
+          if (since >= staleBefore) return null;
+        }
         row.attempts += 1;
         row.startedAt = now();
         return clone(row);

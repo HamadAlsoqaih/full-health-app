@@ -24,7 +24,7 @@ import type { Repositories } from '../../repositories/index.js';
 import type { AiProvider, NotificationsPort } from '../../ports.js';
 import { insertIdempotent } from '../offline-write.js';
 import { computeTrend } from './trend-rules.js';
-import { runEvaluation, startEvaluation, toEvaluation } from './ai-evaluation.js';
+import { startEvaluation, toEvaluation } from './ai-evaluation.js';
 import type { EvaluationDeps } from './ai-evaluation.js';
 import type { UserPreferences } from '@app/shared-types';
 
@@ -116,11 +116,17 @@ export async function recordMeasurement(
 }
 
 /**
- * Returns the latest evaluation, re-firing it first if it has been left stale.
+ * Returns the latest evaluation, re-firing it in the background if it has been
+ * left stale.
  *
  * This is the reaper, and it lives on the read path on purpose: there is no cron
- * and no queue, so the moment the client asks is the natural moment to notice that
- * a previous attempt died with the process.
+ * and no queue, so the moment the client asks is the natural moment to notice a
+ * previous attempt died with the process.
+ *
+ * It deliberately does NOT await the retry. The client polls this endpoint, and a
+ * hung provider would otherwise stall every poll for the full provider timeout —
+ * so the response reports the current state immediately and the next poll picks
+ * up the result. A fast 'pending' beats a twenty-second wait for the same answer.
  */
 export async function getEvaluation(
   deps: BodyCompDeps,
@@ -132,14 +138,21 @@ export async function getEvaluation(
 
   if (latest.status === 'pending') {
     const age = clock().getTime() - new Date(latest.startedAt ?? latest.createdAt).getTime();
+
     if (age > config.evaluation.staleAfterMs) {
+      // Out of retries: settle it as failed rather than leaving it pending
+      // forever, which is exactly the state a two-value status cannot express.
       if (latest.attempts >= config.evaluation.maxAttempts) {
         await repos.evaluations.markFailed(latest.id, 'AI_UNAVAILABLE');
         return toEvaluation(await repos.evaluations.findById(userId, latest.id));
       }
-      // Awaited here, unlike the write path: the caller is already waiting for an
-      // answer, so giving them the fresh one is better than another 'pending'.
-      return runEvaluation(toEvaluationDeps(deps), latest.id, userId);
+
+      // Fire and forget. startEvaluation catches everything, so a rejection here
+      // cannot escape and take the process down.
+      startEvaluation(toEvaluationDeps(deps), latest.id, userId);
+
+      // Re-read so the reported attempt count reflects the claim just made.
+      return toEvaluation(await repos.evaluations.findById(userId, latest.id));
     }
   }
 
