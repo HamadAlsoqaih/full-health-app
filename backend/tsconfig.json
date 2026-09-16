@@ -4,9 +4,7 @@
     "module": "NodeNext",
     "moduleResolution": "nodenext",
     "lib": ["ES2023"],
-    "types": ["node"],
-    "rootDir": ".",
-    "outDir": "./dist",
+    "types": ["node", "multer"],
     "noEmit": true,
     "paths": {
       "@app/shared-types": ["../packages/shared-types/src/index.ts"]

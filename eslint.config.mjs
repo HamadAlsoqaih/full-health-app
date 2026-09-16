@@ -40,14 +40,14 @@ export default tseslint.config(
             {
               name: '../config/supabaseAdmin.js',
               message:
-                'The service-role client bypasses RLS. Import it only from scripts/, jobs/, services/notifications/, repositories/food-cache.repository.ts or services/users/.',
+                'The service-role client bypasses RLS. Import it only from scripts/, jobs/, services/notifications/, services/users/ or repositories/supabase/admin-writes.ts.',
             },
           ],
           patterns: [
             {
               group: ['**/config/supabaseAdmin', '**/config/supabaseAdmin.js'],
               message:
-                'The service-role client bypasses RLS. Import it only from scripts/, jobs/, services/notifications/, repositories/food-cache.repository.ts or services/users/.',
+                'The service-role client bypasses RLS. Import it only from scripts/, jobs/, services/notifications/, services/users/ or repositories/supabase/admin-writes.ts.',
             },
           ],
         },
@@ -61,7 +61,7 @@ export default tseslint.config(
       'backend/src/jobs/**/*.ts',
       'backend/src/services/notifications/**/*.ts',
       'backend/src/services/users/**/*.ts',
-      'backend/src/repositories/food-cache.repository.ts',
+      'backend/src/repositories/supabase/admin-writes.ts',
       'backend/src/config/supabaseAdmin.ts',
     ],
     rules: { 'no-restricted-imports': 'off' },
