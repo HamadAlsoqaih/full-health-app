@@ -35,6 +35,7 @@ import {
   foodLogQuerySchema,
   idParamSchema,
   nutritionSearchQuerySchema,
+  overviewQuerySchema,
   onboardingSchema,
   pushSubscriptionSchema,
   refreshSchema,
@@ -204,7 +205,7 @@ export function createRouter(deps: AppDeps): Router {
 
   const overviewRouter = Router();
   overviewRouter.use(auth, standardLimiter);
-  overviewRouter.get('/', overview.summary);
+  overviewRouter.get('/', validate(overviewQuerySchema, 'query'), overview.summary);
   router.use('/overview', overviewRouter);
 
   const billingRouter = Router();

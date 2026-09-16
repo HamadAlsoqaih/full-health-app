@@ -32,6 +32,10 @@ export default defineConfig({
         // Offline behaviour for user-owned writes is the IndexedDB outbox in shared/lib/offlineQueue.ts.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         navigateFallback: '/index.html',
+        // Without the denylist, a same-origin deployment has the service worker
+        // answer any /api/* navigation with index.html instead of letting it
+        // reach the server.
+        navigateFallbackDenylist: [/^\/api\//],
       },
     }),
   ],
@@ -43,5 +47,24 @@ export default defineConfig({
       ),
     },
   },
-  server: { port: 5173 },
+  server: {
+    port: 5173,
+    /*
+     * Proxies the API in development, so the app runs same-origin locally —
+     * exactly as it does in production behind one domain.
+     *
+     * This exists because the default when VITE_API_BASE_URL is unset is the
+     * empty string, meaning same-origin: without a proxy every request went to
+     * the Vite dev server, which knows nothing about /api and returned index.html
+     * with a 200. A developer who left the variable blank, as .env.example says
+     * they may, got an app whose every call silently failed to parse. The proxy
+     * also keeps CORS out of the local loop entirely.
+     */
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+    },
+  },
 });

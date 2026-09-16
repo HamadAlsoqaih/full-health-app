@@ -8,6 +8,8 @@ export function makeOverviewController(deps: AppDeps) {
   const summary: RequestHandler = (req, res, next) => {
     void (async () => {
       try {
+        // Validated by overviewQuerySchema; absent means "use the server's date".
+        const { date } = req.query as { date?: string };
         res.json(
           await getOverview(
             {
@@ -17,6 +19,7 @@ export function makeOverviewController(deps: AppDeps) {
               clock: deps.clock,
             },
             currentUser(req).id,
+            date,
           ),
         );
       } catch (error) {

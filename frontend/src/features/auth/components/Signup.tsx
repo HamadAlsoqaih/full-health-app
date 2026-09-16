@@ -15,6 +15,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ApiRequestError } from '@/shared/lib/apiClient';
 import { useApi } from '@/shared/lib/ApiProvider';
 import { queryKeys } from '@/shared/lib/queryClient';
+import { todayIso } from '@/shared/lib/dates';
 import { Button, Screen, TextField } from '@/shared/components/Field';
 import { bodyCompositionApi } from '@/features/body-composition/api';
 import { useAuthActions } from '../hooks/useAuth';
@@ -52,7 +53,7 @@ export function Signup() {
     if (draft.stats && !draft.submitted.stats) {
       await bodyCompositionApi(client).createEntry({
         clientId: draft.statsClientId ?? mintClientId(),
-        date: new Date().toISOString().slice(0, 10),
+        date: todayIso(),
         weightKg: draft.stats.weightKg,
         ...(draft.stats.bodyFatPct !== undefined ? { bodyFatPct: draft.stats.bodyFatPct } : {}),
         ...(draft.stats.tapeCm ? { tapeCm: draft.stats.tapeCm } : {}),

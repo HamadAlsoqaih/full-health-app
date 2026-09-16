@@ -51,9 +51,18 @@ async function pickNextRoutine(
   return { id: next.id, name: next.name, exerciseCount: next.exercises.length };
 }
 
-export async function getOverview(deps: BodyCompDeps, userId: string): Promise<OverviewSummary> {
+/**
+ * @param date The caller's calendar date, YYYY-MM-DD. Defaults to the server's
+ *   UTC date, which is only right for a caller actually in UTC — see
+ *   `overviewQuerySchema` for why the client sends its own.
+ */
+export async function getOverview(
+  deps: BodyCompDeps,
+  userId: string,
+  date?: string,
+): Promise<OverviewSummary> {
   const { repos, clock } = deps;
-  const today = clock().toISOString().slice(0, 10);
+  const today = date ?? clock().toISOString().slice(0, 10);
 
   const [user, todaysLog, lastWorkout, latestMeasurement, evaluation, nextRoutine] =
     await Promise.all([

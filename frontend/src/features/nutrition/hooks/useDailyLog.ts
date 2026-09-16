@@ -13,8 +13,6 @@ import { ApiRequestError } from '@/shared/lib/apiClient';
 import { mintClientId } from '@/features/auth/state/onboardingStore';
 import { nutritionApi } from '../api';
 
-export const todayIso = (): string => new Date().toISOString().slice(0, 10);
-
 export function useDailyLog(date: string) {
   const { client } = useApi();
   return useQuery<FoodLogEntry[]>({

@@ -18,6 +18,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useApi } from '@/shared/lib/ApiProvider';
 import { queryKeys } from '@/shared/lib/queryClient';
+import { todayIso } from '@/shared/lib/dates';
 import { ErrorState } from '@/shared/components/ErrorState';
 import { Splash } from '@/shared/components/Splash';
 import { bodyCompositionApi } from '@/features/body-composition/api';
@@ -67,7 +68,7 @@ export function ResumeOnboarding({ goalsSubmitted, statsSubmitted }: ResumeOnboa
           // create a second measurement even if an earlier attempt half-succeeded.
           await bodyCompositionApi(client).createEntry({
             clientId: draft.statsClientId ?? mintClientId(),
-            date: new Date().toISOString().slice(0, 10),
+            date: todayIso(),
             weightKg: draft.stats.weightKg,
             ...(draft.stats.bodyFatPct !== undefined ? { bodyFatPct: draft.stats.bodyFatPct } : {}),
             ...(draft.stats.tapeCm ? { tapeCm: draft.stats.tapeCm } : {}),

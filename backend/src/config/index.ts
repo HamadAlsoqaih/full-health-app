@@ -87,6 +87,37 @@ const blank = <T extends z.ZodTypeAny>(schema: T) =>
     schema,
   );
 
+/**
+ * The Supabase project URL, and only that.
+ *
+ * `z.string().url()` is not enough here. The value copied out of the Supabase
+ * dashboard's API section is often the REST endpoint —
+ * `https://<ref>.supabase.co/rest/v1/` — which is a perfectly valid URL and
+ * completely wrong: supabase-js appends `/rest/v1`, `/auth/v1` and `/storage/v1`
+ * to whatever it is given, so a path here produces requests to
+ * `/rest/v1/rest/v1/...` that 404 on every call. The failure surfaces far from
+ * its cause, as "relation does not exist" or an opaque fetch error at runtime,
+ * so it is worth refusing at boot with an explanation instead.
+ */
+const supabaseProjectUrl = z
+  .string()
+  .url()
+  .refine(
+    (value) => {
+      // Zod runs every check in a chain, so this still sees a value that failed
+      // `.url()` above. Parsing it unguarded would throw a bare "Invalid URL"
+      // out of the schema instead of producing a field-level issue.
+      if (!URL.canParse(value)) return true;
+      const { pathname, search } = new URL(value);
+      return (pathname === '/' || pathname === '') && search === '';
+    },
+    {
+      message:
+        'must be the project URL with no path — https://<project-ref>.supabase.co. ' +
+        'Drop any /rest/v1 or /auth/v1 suffix: the client appends those itself.',
+    },
+  );
+
 const rawSchema = z.object({
   NODE_ENV: blank(z.enum(['development', 'test', 'production']).default('development')),
   PORT: blank(z.coerce.number().int().positive().default(8080)),
@@ -97,7 +128,7 @@ const rawSchema = z.object({
   // Supabase. The anon key is used with the caller's JWT so row-level security
   // applies; the service-role key bypasses RLS and is confined to the few
   // operations that have no user JWT. See config/supabaseAdmin.ts.
-  SUPABASE_URL: blank(z.string().url().optional()),
+  SUPABASE_URL: blank(supabaseProjectUrl.optional()),
   SUPABASE_ANON_KEY: blank(z.string().min(1).optional()),
   SUPABASE_SERVICE_ROLE_KEY: blank(z.string().min(1).optional()),
 

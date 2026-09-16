@@ -14,7 +14,8 @@ import { ErrorState } from '@/shared/components/ErrorState';
 import { Skeleton } from '@/shared/components/Skeleton';
 import { useToast } from '@/shared/components/Toast';
 import { nutritionApi } from '../api';
-import { todayIso, useLogFood } from '../hooks/useDailyLog';
+import { useLogFood } from '../hooks/useDailyLog';
+import { todayIso } from '@/shared/lib/dates';
 
 const DEBOUNCE_MS = 400;
 

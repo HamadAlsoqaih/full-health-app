@@ -9,7 +9,7 @@
  * is the actual routing logic rather than a restatement of it.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SESSION, makeUser, renderApp, type StubRoute } from './helpers/render';
 
@@ -449,8 +449,10 @@ describe('fully onboarded', () => {
     const nav = await screen.findByRole('navigation', { name: /main/i });
     expect(nav).toBeInTheDocument();
 
-    // Exactly five tabs, in the documented order.
-    const tabs = await screen.findAllByRole('tab');
+    // Exactly five tabs, in the documented order. Queried as links, not by
+    // role="tab": these navigate between routes rather than switching panels, so
+    // the bar is a labelled <nav> of links carrying aria-current — see BottomNav.
+    const tabs = await within(nav).findAllByRole('link');
     expect(tabs).toHaveLength(5);
     expect(tabs.map((t) => t.textContent)).toEqual([
       expect.stringContaining('Overview'),

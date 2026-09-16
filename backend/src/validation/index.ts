@@ -214,6 +214,18 @@ export const foodLogInputSchema = z
 
 export const foodLogQuerySchema = z.object({ date: isoDateSchema }).strict();
 
+/**
+ * `date` is the CALLER's calendar date, not the server's.
+ *
+ * The server's own clock runs in UTC, and a user's day does not: in Riyadh the
+ * UTC date is still yesterday until 03:00, and in New York it is already
+ * tomorrow from 19:00. Deriving "today" server-side therefore totalled the wrong
+ * day's food for everybody outside UTC. The client knows its own timezone, so it
+ * says which day it means; the UTC date remains the fallback for a caller that
+ * does not, which keeps the parameter additive.
+ */
+export const overviewQuerySchema = z.object({ date: isoDateSchema.optional() }).strict();
+
 // ---------------------------------------------------------------------------
 // Body composition
 // ---------------------------------------------------------------------------

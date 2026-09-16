@@ -9,5 +9,10 @@ import type { OverviewSummary } from '@app/shared-types';
 import type { ApiClient } from '@/shared/lib/apiClient';
 
 export const overviewApi = (client: ApiClient) => ({
-  summary: () => client.get<OverviewSummary>('/api/overview'),
+  /**
+   * `date` is the caller's own calendar date. The server defaults to its UTC
+   * date when it is omitted, which is the wrong day for anyone not in UTC.
+   */
+  summary: (date: string) =>
+    client.get<OverviewSummary>(`/api/overview?date=${encodeURIComponent(date)}`),
 });

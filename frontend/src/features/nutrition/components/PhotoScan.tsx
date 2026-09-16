@@ -21,7 +21,8 @@ import { Button, Card, NumberField } from '@/shared/components/Field';
 import { ErrorState } from '@/shared/components/ErrorState';
 import { useToast } from '@/shared/components/Toast';
 import { nutritionApi } from '../api';
-import { todayIso, useLogFood } from '../hooks/useDailyLog';
+import { useLogFood } from '../hooks/useDailyLog';
+import { todayIso } from '@/shared/lib/dates';
 
 const MAX_BYTES = 8 * 1024 * 1024;
 

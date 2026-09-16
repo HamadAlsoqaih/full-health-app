@@ -11,7 +11,15 @@
  *  - The active tab is marked by an accent colour AND a weight change AND an
  *    underline bar, so it is never signalled by colour alone. NavLink adds
  *    aria-current="page" itself, so it is not set here.
- *  - `role="tablist"` with links, so it reads as navigation to a screen reader.
+ *
+ * Deliberately NOT `role="tablist"`/`role="tab"`, despite looking like tabs.
+ * These navigate between routes; they do not switch panels within one view. Two
+ * concrete problems with the tab roles here: `role="tab"` on an anchor replaces
+ * its implicit `link` role, so assistive technology stops reporting the bar as
+ * navigation at all — and the tab role requires `aria-selected` plus an owning
+ * `tabpanel`, neither of which exists, so the result is invalid ARIA rather than
+ * richer semantics. A labelled `<nav>` of links carrying `aria-current="page"`
+ * is the pattern for this, and it is what screen readers already announce well.
  */
 import { NavLink } from 'react-router-dom';
 
@@ -35,12 +43,11 @@ export function BottomNav() {
       aria-label="Main"
       className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface pb-safe shadow-nav"
     >
-      <ul role="tablist" className="mx-auto flex max-w-content-max">
+      <ul className="mx-auto flex max-w-content-max">
         {TABS.map((tab) => (
           <li key={tab.to} className="flex-1">
             <NavLink
               to={tab.to}
-              role="tab"
               // The whole cell is the target, not just the label text.
               className={({ isActive }) =>
                 [

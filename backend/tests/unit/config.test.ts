@@ -166,6 +166,31 @@ describe('genuinely malformed values still fail fast', () => {
       /Invalid environment configuration/,
     );
   });
+
+  describe('SUPABASE_URL must be the bare project URL', () => {
+    // The trap: the Supabase dashboard shows the REST endpoint, and pasting it
+    // gives a valid URL that breaks every request, because supabase-js appends
+    // /rest/v1 itself and you end up calling /rest/v1/rest/v1/… . That failed at
+    // runtime with an unrelated-looking error rather than at boot.
+    it.each([
+      'https://abc.supabase.co/rest/v1/',
+      'https://abc.supabase.co/rest/v1',
+      'https://abc.supabase.co/auth/v1',
+      'https://abc.supabase.co/?apikey=x',
+    ])('rejects %s', async (url) => {
+      await expect(loadConfig({ ...ALL_BLANK, SUPABASE_URL: url })).rejects.toThrow(
+        /SUPABASE_URL: must be the project URL with no path/,
+      );
+    });
+
+    it.each(['https://abc.supabase.co', 'https://abc.supabase.co/', 'http://localhost:54321'])(
+      'accepts %s',
+      async (url) => {
+        const config = await loadConfig({ ...ALL_BLANK, SUPABASE_URL: url });
+        expect(config.supabase.url).toBe(url);
+      },
+    );
+  });
 });
 
 describe('require accessors throw at point of use, not at import', () => {

@@ -258,6 +258,16 @@ disk.
 3. Add `VITE_API_BASE_URL` (your Render URL), `VITE_SENTRY_DSN` and
    `VITE_ONESIGNAL_APP_ID` as build-time variables.
 
+Client-side routing is already handled: `frontend/public/_redirects` sends every
+unmatched path to `index.html` with a 200. Without it, Pages answers a reload on
+`/app/overview` with its own 404 — a bug that only shows up after deployment,
+because the dev server rewrites those paths itself.
+
+`frontend/wrangler.jsonc` is there for the alternative flow, `wrangler deploy`
+from `frontend/` as a Worker serving static assets, where
+`not_found_handling: "single-page-application"` does the same job. Pick one; both
+being present is harmless.
+
 Remember that every `VITE_*` value is **inlined into the public bundle**. Only put
 things there that are safe for anyone to read.
 

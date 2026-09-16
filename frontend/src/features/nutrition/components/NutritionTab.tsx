@@ -10,7 +10,7 @@ import { Button, Card, Screen } from '@/shared/components/Field';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { Skeleton } from '@/shared/components/Skeleton';
 import { useCustomFoods } from '../hooks/useCustomFoods';
-import { todayIso } from '../hooks/useDailyLog';
+import { todayIso } from '@/shared/lib/dates';
 import { CustomFoodForm } from './CustomFoodForm';
 import { DailyLog } from './DailyLog';
 import { FoodSearch } from './FoodSearch';

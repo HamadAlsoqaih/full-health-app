@@ -149,6 +149,82 @@ describe('GET /overview', () => {
     expect(response.body.evaluation.status).toBeDefined();
   });
 
+  describe('the caller decides which day "today" is', () => {
+    /**
+     * The bug this pins: the server used its own UTC date, so a user east of UTC
+     * saw yesterday's totals until 03:00 and a user west of it saw tomorrow's
+     * from 19:00 — one day's eating split across two rows, both wrong.
+     *
+     * The harness clock is fixed at 2026-03-01, so 2026-02-28 stands in for
+     * "the caller's day differs from the server's".
+     */
+    async function withOneMealOn(date: string) {
+      const harness = createTestHarness();
+      const { app, seedUser } = harness;
+      const { token } = seedUser('a@example.com');
+      const authed = (r: request.Test) => r.set('Authorization', `Bearer ${token}`);
+
+      const food = await authed(
+        request(app).post('/api/nutrition/custom-foods').send({
+          clientId: 'cf-client-000001',
+          name: 'Oats',
+          calories: 350,
+          proteinG: 12,
+          carbsG: 60,
+          fatG: 6,
+        }),
+      );
+      await authed(
+        request(app)
+          .post('/api/nutrition/log')
+          .send({
+            clientId: 'fl-client-000001',
+            foodItemId: `custom:${food.body.id}`,
+            date,
+            servingMultiplier: 1,
+          }),
+      );
+
+      return { app, authed };
+    }
+
+    it('totals the requested date, not the server date', async () => {
+      const { app, authed } = await withOneMealOn('2026-02-28');
+
+      const response = await authed(request(app).get('/api/overview?date=2026-02-28'));
+
+      expect(response.status).toBe(200);
+      expect(response.body.date).toBe('2026-02-28');
+      expect(response.body.calories.logged).toBe(350);
+    });
+
+    it('does not count another day against the requested one', async () => {
+      const { app, authed } = await withOneMealOn('2026-02-28');
+
+      const response = await authed(request(app).get('/api/overview?date=2026-03-01'));
+
+      expect(response.body.date).toBe('2026-03-01');
+      expect(response.body.calories.logged).toBe(0);
+    });
+
+    it('falls back to the server date when none is given', async () => {
+      const { app, authed } = await withOneMealOn('2026-02-28');
+
+      const response = await authed(request(app).get('/api/overview'));
+
+      expect(response.body.date).toBe('2026-03-01');
+    });
+
+    it('rejects a malformed date rather than silently ignoring it', async () => {
+      const { app, authed } = await withOneMealOn('2026-02-28');
+
+      const response = await authed(request(app).get('/api/overview?date=01-03-2026'));
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('VALIDATION_FAILED');
+    });
+  });
+
   it('lets remaining calories go negative, so being over target is visible', async () => {
     const harness = createTestHarness();
     const { app, seedUser, store } = harness;

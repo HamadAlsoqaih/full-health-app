@@ -38,7 +38,9 @@ export function createQueryClient(): QueryClient {
 /** Query keys in one place, so an invalidation cannot miss a consumer. */
 export const queryKeys = {
   me: ['me'] as const,
+  /** Prefix. Invalidating this reaches every day's summary. */
   overview: ['overview'] as const,
+  overviewFor: (date: string) => ['overview', date] as const,
   exercises: (filter?: string) => ['exercises', filter ?? 'all'] as const,
   routines: ['routines'] as const,
   workoutLogs: ['workout-logs'] as const,

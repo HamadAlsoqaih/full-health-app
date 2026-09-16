@@ -9,6 +9,7 @@ import type { TapeMeasurementsCm, UnitSystem } from '@app/shared-types';
 import { Button, NumberField } from '@/shared/components/Field';
 import { useToast } from '@/shared/components/Toast';
 import { inToCm, lbToKg } from '@/shared/lib/units';
+import { todayIso } from '@/shared/lib/dates';
 import { useRecordMeasurement } from '../hooks/useBodyComp';
 
 const TAPE_FIELDS: Array<{ key: keyof TapeMeasurementsCm; label: string }> = [
@@ -66,7 +67,7 @@ export function MeasurementEntry({ units, onDone }: { units: UnitSystem; onDone:
 
     try {
       const result = await record.mutateAsync({
-        date: new Date().toISOString().slice(0, 10),
+        date: todayIso(),
         weightKg: Math.round(weightKg * 100) / 100,
         ...(bodyFatPct !== undefined ? { bodyFatPct } : {}),
         ...(Object.keys(tapeCm).length > 0 ? { tapeCm } : {}),
