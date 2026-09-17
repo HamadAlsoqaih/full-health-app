@@ -55,11 +55,19 @@ cp frontend/.env.example frontend/.env
 
 ### Apply the schema
 
-The schema, its constraints and all row-level security policies live in one file:
-`backend/supabase/migrations/0001_init.sql`.
+The schema, its constraints and all row-level security policies live in
+`backend/supabase/migrations/`. Apply them **in filename order**:
+
+| File                                | What it does                                                                                                                                                                                                                 |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0001_init.sql`                     | Every table, constraint, index and RLS policy.                                                                                                                                                                               |
+| `0002_food_cache_update_policy.sql` | Lets a user replace their own AI photo estimate. Without it, answering the follow-up questions on a photo scan fails with a 500 — the second pass writes the revised estimate under the same id, and RLS refuses the update. |
+
+**If your project was created before `0002` existed**, you already have `0001` and only
+need to run `0002`. It is safe to re-run and drops nothing.
 
 **Option A — SQL editor (simplest).** Open **SQL Editor** in the dashboard, paste the
-entire contents of that file, and run it.
+contents of each file in order, and run them.
 
 **Option B — Supabase CLI.**
 
@@ -77,7 +85,7 @@ You do not need Supabase to check the schema is sound. With any local Postgres:
 ./backend/supabase/verify-migration.sh
 ```
 
-That applies the migration to a throwaway database and runs 22 assertions over the
+That applies the migration to a throwaway database and runs 24 assertions over the
 constraints and the RLS policies. CI runs it against a Postgres service container.
 
 ### Email confirmation

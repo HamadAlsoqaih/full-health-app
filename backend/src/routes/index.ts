@@ -21,6 +21,7 @@ import { idempotency, replayFinders } from '../middlewares/idempotency.middlewar
 import {
   authLimiter,
   createVisionQuota,
+  photoRefineLimiter,
   photoScanLimiter,
   searchLimiter,
   standardLimiter,
@@ -172,7 +173,9 @@ export function createRouter(deps: AppDeps): Router {
   );
   nutritionRouter.post(
     '/scan-photo/refine',
-    photoScanLimiter,
+    // Its own bucket, not the scan's: a retried scan must not spend the budget
+    // for answering the questions it produced.
+    photoRefineLimiter,
     photoUpload.single('photo'),
     nutrition.refineScan,
   );

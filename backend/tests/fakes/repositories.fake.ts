@@ -359,7 +359,28 @@ export function createFakeRepositories(store: FakeStore, ctx: RepositoryContext)
         );
         return row ? (clone(row.payload) as FoodItem) : null;
       },
+      /**
+       * Replaces, rather than appending.
+       *
+       * This used to push unconditionally, and that is exactly how a 500 on
+       * every photo refinement reached a user: `food_cache` is unique on
+       * (kind, source, query) in Postgres, the second pass writes the same id,
+       * and a fake backed by a plain array happily accepted the duplicate. The
+       * fake now mirrors the constraint so the suite can see that class of bug.
+       */
       async putEstimate(userId, estimateId, item) {
+        const existing = store.foodCache.find(
+          (c) =>
+            c.kind === 'estimate' && c.source === 'ai-photo-estimate' && c.query === estimateId,
+        );
+        if (existing) {
+          // The real table is unique on (kind, source, query) with no user_id,
+          // so a collision across users is a constraint violation there too.
+          if (existing.userId !== userId) throw uniqueViolation('food_cache_kind_source_query');
+          existing.payload = clone(item);
+          existing.fetchedAt = now();
+          return;
+        }
         store.foodCache.push({
           id: ctx.uuid(),
           kind: 'estimate',

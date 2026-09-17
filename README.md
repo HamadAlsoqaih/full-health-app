@@ -55,14 +55,14 @@ npm run dev      # API on :8080, web app on :5173
 
 ```bash
 npm test                                 # 167 tests
-./backend/supabase/verify-migration.sh   # 22 schema + RLS assertions (needs Postgres)
+./backend/supabase/verify-migration.sh   # 24 schema + RLS assertions (needs Postgres)
 ```
 
 |              |                                       |
 | ------------ | ------------------------------------- |
 | Backend      | 136 tests across 8 files              |
 | Frontend     | 31 tests across 2 files               |
-| Schema / RLS | 22 assertions against a real Postgres |
+| Schema / RLS | 24 assertions against a real Postgres |
 
 See **[docs/TESTING.md](docs/TESTING.md)** for what is covered, and what is not.
 

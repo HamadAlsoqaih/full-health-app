@@ -232,6 +232,56 @@ begin
   end if;
   raise notice 'PASS  RLS: updating another user''s row affects nothing';
 
+  -- =========================================================================
+  -- The two-pass photo scan replaces its own estimate row.
+  --
+  -- This is the assertion that would have caught a 500 on every photo
+  -- refinement. The second pass writes the revised estimate under the SAME id,
+  -- food_cache is unique on (kind, source, query), and the repository used a
+  -- plain INSERT — so a successful model call was followed by a 23505. The
+  -- credential-free suite could not see it: its fake is an array with no
+  -- constraint. Only real Postgres can answer this, so it is asked here.
+  --
+  -- It needs BOTH halves to pass: the unique constraint makes it an upsert, and
+  -- the UPDATE policy from 0002 is what lets the update half through RLS.
+  -- =========================================================================
+  insert into public.food_cache (kind, source, query, user_id, payload)
+  values ('estimate', 'ai-photo-estimate', 'estimate:verify-1',
+          '11111111-1111-1111-1111-111111111111', '{"calories": 1800}'::jsonb);
+
+  insert into public.food_cache (kind, source, query, user_id, payload)
+  values ('estimate', 'ai-photo-estimate', 'estimate:verify-1',
+          '11111111-1111-1111-1111-111111111111', '{"calories": 2520}'::jsonb)
+  on conflict (kind, source, query)
+    do update set payload = excluded.payload, fetched_at = now();
+
+  select count(*) into visible from public.food_cache
+   where kind = 'estimate' and query = 'estimate:verify-1';
+  if visible <> 1 then
+    raise exception 'FAIL  food_cache: refining left % estimate rows, expected 1', visible;
+  end if;
+
+  perform 1 from public.food_cache
+   where query = 'estimate:verify-1' and (payload->>'calories')::int = 2520;
+  if not found then
+    raise exception 'FAIL  food_cache: the refined estimate did not replace the first one';
+  end if;
+  raise notice 'PASS  food_cache: a refined estimate replaces its own row under RLS';
+
+  -- The same must NOT be possible against a row owned by someone else: the
+  -- unique constraint has no user_id in it, so a colliding id from another
+  -- account must be refused rather than silently rewritten.
+  begin
+    insert into public.food_cache (kind, source, query, user_id, payload)
+    values ('estimate', 'ai-photo-estimate', 'estimate:verify-1',
+            '22222222-2222-2222-2222-222222222222', '{"calories": 1}'::jsonb)
+    on conflict (kind, source, query)
+      do update set payload = excluded.payload;
+    raise exception 'FAIL  RLS: a user rewrote another user''s estimate via upsert';
+  exception when insufficient_privilege then
+    raise notice 'PASS  RLS: upserting onto another user''s estimate is blocked';
+  end;
+
   -- Reference data stays readable.
   perform 1 from public.exercises limit 1;
   raise notice 'PASS  RLS: reference exercise data is readable by an authenticated user';

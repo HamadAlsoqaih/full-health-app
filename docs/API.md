@@ -320,6 +320,15 @@ Design notes worth knowing before changing this:
   call. Two vision calls per scan, so a 1200/day cap is ~600 scans.
 - **Bounds are the protection on `note`**: 500 characters, three answers, because
   it is free text going into a prompt.
+- **It has its own per-minute rate bucket**, not the scan's. Sharing one made the
+  two compete: a scan, a retry, and then answering the questions is three or four
+  requests against a limit of five, so the useful half of the flow was refused
+  because of the half that had already failed.
+- **The revised estimate REPLACES the cached row** under the same id, via an upsert
+  on `(kind, source, query)`. A plain insert violates that unique constraint and
+  returned a 500 on every refinement until `0002_food_cache_update_policy.sql`
+  added the RLS `update` policy the upsert needs. If refinement starts failing
+  after a fresh Supabase project, that migration is the first thing to check.
 
 Errors: `404` if the estimate expired or belongs to someone else, `400` for
 malformed `answers`, plus the same `415`/`413`/`429`/`503` as the first pass.

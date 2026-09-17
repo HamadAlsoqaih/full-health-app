@@ -80,7 +80,7 @@ What _was_ verified for real:
 
 - **Free Exercise DB**: reachable, 876 exercises parsed, 0 skipped, exactly 3
   without images, media URLs resolve (HTTP 200).
-- **The schema**: applied to a real Postgres 16, with 22 assertions over its
+- **The schema**: applied to a real Postgres 16, with 24 assertions over its
   constraints and RLS policies.
 - **Everything else**: 167 tests across both workspaces.
 
@@ -100,6 +100,28 @@ every policy decorative. Repositories _also_ filter on `user_id` regardless, bec
 RLS is the layer the credential-free suite cannot reach and must never be the only
 defence. `verify-migration.sh` closes most of that gap against a local Postgres, but
 it has never run against Supabase's own `auth.uid()`.
+
+That gap is not theoretical. Two bugs reached a real user through it: `/auth/register`
+attached anonymous repositories so `auth.uid()` was null and the `users` insert was
+refused, and `putEstimate` used a plain `insert` against a table unique on
+`(kind, source, query)` so every photo refinement died on a `23505` after a
+perfectly good model call. Both passed the whole suite, because the in-memory fake
+has neither RLS nor a unique constraint. `verify-schema.sql` now asserts both
+behaviours against real Postgres — a refined estimate replacing its own row, and an
+upsert onto another user's estimate being refused — which is the only place either
+could have been caught.
+
+**`food_cache` is unique on `(kind, source, query)` with no `user_id` in it.**
+Inconsistent with every other per-user table, which uses `unique(user_id, client_id)`
+precisely so one account's key cannot block another's write. Here it is not
+exploitable — estimate ids are uuids, so a cross-account collision needs a uuid
+guess — and `verify-schema.sql` asserts that an upsert onto another user's estimate
+is refused by RLS rather than silently rewriting it. But the constraint shape is
+still wrong, and it is the reason the estimate write has to be an upsert with an
+explicit conflict target. Fixing it means changing a unique constraint on a live
+table: add `unique(kind, source, query, user_id)` for owned rows, keep a partial
+unique index on `(kind, source, query) where user_id is null` for the shared cache
+rows, then drop the old one. Not worth it until something else touches that table.
 
 **Token validation costs a round trip.** `getUserFromToken` asks Supabase to
 validate on every authenticated request. Verifying the JWT locally against the

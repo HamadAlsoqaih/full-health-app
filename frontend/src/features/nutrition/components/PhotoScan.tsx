@@ -136,8 +136,23 @@ export function PhotoScan({ onDone }: PhotoScanProps) {
         detectedItems: refined.detectedItems,
         autoLogged: false,
       });
-    } catch {
-      toast.show('Could not update the estimate. The first one still stands.', 'error');
+    } catch (caught) {
+      /*
+       * The server's own message is shown, not a generic one.
+       *
+       * This swallowed a real bug for a whole evening: every refinement was
+       * failing on a unique-constraint violation, and the screen said only
+       * "could not update the estimate" — which is indistinguishable from the
+       * model being busy, and told nobody anything. The reasons a refinement can
+       * fail are things a person can act on ("that estimate has expired, scan
+       * again", "too many requests, wait a moment"), so they are worth saying.
+       *
+       * The reassurance is appended rather than replacing it: whatever went
+       * wrong, the first estimate is still on screen and still loggable.
+       */
+      const reason =
+        caught instanceof ApiRequestError && caught.message ? caught.message : 'Something failed.';
+      toast.show(`${reason} The first estimate still stands.`, 'error');
     } finally {
       setRefining(false);
       setQuestionsDone(true);

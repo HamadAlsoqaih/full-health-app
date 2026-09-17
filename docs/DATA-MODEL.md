@@ -1,7 +1,9 @@
 # Data model
 
-The authoritative definition is `backend/supabase/migrations/0001_init.sql`, which is
-commented at every non-obvious decision. This is the shape and the reasoning.
+The authoritative definition is `backend/supabase/migrations/`, applied in filename
+order and commented at every non-obvious decision: `0001_init.sql` is the whole
+schema, `0002_food_cache_update_policy.sql` adds the RLS policy that lets a user
+replace their own AI photo estimate. This is the shape and the reasoning.
 
 ---
 

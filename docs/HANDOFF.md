@@ -55,7 +55,7 @@ policy. Parsing logic is covered by checked-in fixtures; transport is not. That
 applies to Supabase, Gemini, Groq, USDA, Open Food Facts, OneSignal and Sentry.
 
 **RLS has never run against Supabase's own `auth.uid()`.** The policies are verified
-against a local Postgres with a stand-in implementation (22 assertions, in CI), and
+against a local Postgres with a stand-in implementation (24 assertions, in CI), and
 repositories filter on `user_id` independently as a second line of defence. But the
 real thing is unproven.
 

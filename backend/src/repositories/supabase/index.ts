@@ -454,15 +454,38 @@ export function createSupabaseRepositories(ctx: RepositoryContext): Repositories
         return row ? (toFoodCacheRow(row).payload as FoodItem) : null;
       },
 
+      /**
+       * Writes or REPLACES the estimate row for this id.
+       *
+       * An upsert rather than an insert, because the second pass of a photo scan
+       * revises the estimate under the SAME id and `food_cache` is unique on
+       * (kind, source, query). A plain insert made every refinement fail with a
+       * 23505 the moment it met real Postgres — the in-memory fake has no
+       * constraint, so nothing in the suite could see it.
+       *
+       * Replacing rather than adding is also the point: the confirmation step
+       * resolves macros from this row, so the superseded numbers must not
+       * survive alongside the revised ones.
+       *
+       * User-owned, so this goes through the request-scoped client and RLS —
+       * which is why `food_cache` needs an UPDATE policy (migration 0002) and
+       * not only the INSERT one the first pass got by with.
+       */
       async putEstimate(userId, estimateId, item) {
-        // User-owned, so this goes through the request-scoped client and RLS.
-        const { error } = await db.from('food_cache').insert({
-          kind: 'estimate',
-          source: 'ai-photo-estimate',
-          query: estimateId,
-          user_id: userId,
-          payload: item,
-        });
+        const { error } = await db.from('food_cache').upsert(
+          {
+            kind: 'estimate',
+            source: 'ai-photo-estimate',
+            query: estimateId,
+            user_id: userId,
+            payload: item,
+            // Set explicitly: the column default only applies on insert, so an
+            // upsert that updates would otherwise keep the first pass's age and
+            // the row would expire early.
+            fetched_at: ctx.clock().toISOString(),
+          },
+          { onConflict: 'kind,source,query' },
+        );
         if (error) rethrow(error, 'foodCache.putEstimate');
       },
     },

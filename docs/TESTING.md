@@ -1,10 +1,10 @@
 # Testing
 
 ```bash
-npm test                              # both workspaces — 420 tests
-npm test --workspace backend          # 244 tests
+npm test                              # both workspaces — 423 tests
+npm test --workspace backend          # 247 tests
 npm test --workspace frontend         # 176 tests
-./backend/supabase/verify-migration.sh  # 22 schema/RLS assertions (needs Postgres)
+./backend/supabase/verify-migration.sh  # 24 schema/RLS assertions (needs Postgres)
 ```
 
 **Everything passes with no `.env`, no Supabase project, no API keys and no network

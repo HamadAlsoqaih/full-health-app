@@ -66,6 +66,19 @@ export const searchLimiter = make({ windowMs: 60_000, limit: 20 });
 /** Vision calls are the expensive, quota-bounded ones. */
 export const photoScanLimiter = make({ windowMs: 60_000, limit: 5 });
 
+/**
+ * The second pass gets its OWN bucket rather than sharing the scan's.
+ *
+ * Sharing one bucket made the two compete: a scan, a retry after a failure, and
+ * then answering the questions is four requests against a limit of five, so the
+ * useful half of the flow was being refused because of the half that had already
+ * failed. They draw on the same account-wide vision quota either way — that is
+ * what `visionQuota` below is for, and it still counts both — but the per-minute
+ * limits exist to stop one user hammering the endpoint, and hammering scan is not
+ * a reason to refuse them a refinement.
+ */
+export const photoRefineLimiter = make({ windowMs: 60_000, limit: 5 });
+
 /** Unauthenticated endpoints are keyed by IP and kept deliberately low. */
 export const authLimiter = make({ windowMs: 15 * 60_000, limit: 20 });
 

@@ -199,6 +199,127 @@ describe('POST /nutrition/scan-photo/refine', () => {
   });
 });
 
+/**
+ * The regression suite for the bug that actually shipped.
+ *
+ * Every refinement returned a 500 against real Postgres. The second pass writes
+ * the revised estimate under the SAME id, `food_cache` is unique on
+ * (kind, source, query), and the repository did a plain INSERT — so the write
+ * after a perfectly successful model call violated the constraint. Nothing in a
+ * suite of 420 tests could see it, because the in-memory fake was a plain array
+ * with no constraint at all.
+ *
+ * So these tests assert on the STORED ROW, not on the response. The response was
+ * always correct; it was the row behind it that was wrong. The fake now replaces
+ * rather than appends, which is what lets the first two below mean anything.
+ */
+describe('the stored estimate after a refinement', () => {
+  it('holds one row, not two', async () => {
+    const h = harnessWithUser();
+    const first = await scan(h);
+
+    await h.authed(
+      request(h.app)
+        .post('/api/nutrition/scan-photo/refine')
+        .attach('photo', PHOTO, 'meal.jpg')
+        .field(
+          'answers',
+          JSON.stringify({
+            previousEstimateId: first.estimate.id,
+            answers: [
+              {
+                questionId: 'cooking-method',
+                question: 'How was this cooked?',
+                option: 'Deep fried',
+              },
+            ],
+          }),
+        ),
+    );
+
+    // Two rows is the shape a plain insert produces, and in Postgres it is not
+    // two rows but a 23505 and a 500 in the user's face.
+    const rows = h.store.foodCache.filter(
+      (row) => row.kind === 'estimate' && row.query === first.estimate.id,
+    );
+    expect(rows).toHaveLength(1);
+  });
+
+  it('holds the revised numbers, not the superseded ones', async () => {
+    const h = harnessWithUser();
+    const first = await scan(h);
+
+    const refined = await h.authed(
+      request(h.app)
+        .post('/api/nutrition/scan-photo/refine')
+        .attach('photo', PHOTO, 'meal.jpg')
+        .field(
+          'answers',
+          JSON.stringify({
+            previousEstimateId: first.estimate.id,
+            answers: [
+              {
+                questionId: 'cooking-method',
+                question: 'How was this cooked?',
+                option: 'Deep fried',
+              },
+            ],
+          }),
+        ),
+    );
+
+    const row = h.store.foodCache.find(
+      (candidate) => candidate.kind === 'estimate' && candidate.query === first.estimate.id,
+    );
+    const payload = row?.payload as { calories: number } | undefined;
+
+    // Appending instead of replacing leaves the read returning whichever row it
+    // finds first — the stale one — so this is the assertion that catches a
+    // refinement that appears to work on screen and does nothing underneath.
+    expect(payload?.calories).toBe(refined.body.estimate.calories);
+    expect(payload?.calories).not.toBe(first.estimate.calories);
+  });
+
+  it('is what the eventual log records — the revised calories, not the first guess', async () => {
+    const h = harnessWithUser();
+    const first = await scan(h);
+
+    const refined = await h.authed(
+      request(h.app)
+        .post('/api/nutrition/scan-photo/refine')
+        .attach('photo', PHOTO, 'meal.jpg')
+        .field(
+          'answers',
+          JSON.stringify({
+            previousEstimateId: first.estimate.id,
+            answers: [
+              {
+                questionId: 'cooking-method',
+                question: 'How was this cooked?',
+                option: 'Deep fried',
+              },
+            ],
+          }),
+        ),
+    );
+
+    // The confirmation resolves macros server-side from the cache row, which is
+    // the whole reason the row exists. This is the end-to-end consequence: get
+    // the row wrong and someone sees 2520 on screen and eats 1800 in their day.
+    const logged = await h.authed(
+      request(h.app).post('/api/nutrition/log').send({
+        clientId: 'fl-refined-00001',
+        foodItemId: first.estimate.id,
+        date: '2026-03-01',
+        servingMultiplier: 1,
+      }),
+    );
+
+    expect(logged.status).toBe(201);
+    expect(logged.body.calories).toBe(refined.body.estimate.calories);
+  });
+});
+
 describe('refining what is not yours, or not there', () => {
   it('refuses an estimate id that does not exist', async () => {
     const h = harnessWithUser();
