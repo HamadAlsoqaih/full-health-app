@@ -6,4 +6,4 @@
  * Both this and payment-provider.interface.ts follow the same swappable-provider
  * pattern (spec rule 8).
  */
-export type { AiProvider, PhotoEstimate } from '../../../ports.js';
+export type { AiProvider, PhotoEstimate, PhotoRefinement } from '../../../ports.js';

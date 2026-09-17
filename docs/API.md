@@ -245,9 +245,27 @@ few seconds.
   "estimate": { "id": "estimate:uuid", "name": "...", "calories": 620, "...": "..." },
   "confidence": "low",
   "detectedItems": ["grilled chicken", "rice"],
+  "questions": [
+    {
+      "id": "cooking-method",
+      "question": "How was this cooked?",
+      "options": ["Deep fried", "Air fried", "Not sure"]
+    }
+  ],
   "autoLogged": false
 }
 ```
+
+`servingLabel` describes the **whole portion in the photo** in a unit a person
+recognises — "8 pieces", "1 burger", "1 plate" — and "1 portion" when nothing
+better can be judged. How much of it was eaten is the log's `servingMultiplier`,
+not part of the estimate.
+
+`questions` is at most three, absent or empty when the model had nothing worth
+asking or answered in a shape the parser rejected. Every question ends with an
+explicit `"Not sure"`, appended server-side whether the model offered it or not:
+forcing a guess between air-fried and deep-fried produces worse data than an
+honest unknown.
 
 **Nothing is logged.** The estimate is returned for confirmation; logging it is a
 separate `POST /nutrition/log` with `foodItemId` set to the returned
@@ -258,6 +276,53 @@ separate `POST /nutrition/log` with `foodItemId` set to the returned
 Errors: `415` wrong type, `413` too large, `429 AI_QUOTA_EXHAUSTED` when the
 deployment's daily allowance is spent, `503 AI_UNAVAILABLE` if the provider cannot
 do vision.
+
+### `POST /api/nutrition/scan-photo/refine`
+
+Multipart. Field `photo` is **the same image again**; field `answers` is a JSON
+string:
+
+```json
+{
+  "previousEstimateId": "estimate:uuid",
+  "answers": [
+    {
+      "questionId": "cooking-method",
+      "question": "How was this cooked?",
+      "option": "Deep fried"
+    }
+  ],
+  "note": "the rice had butter mixed through it"
+}
+```
+
+**200** → the revised estimate plus `previousCalories`, so the client can show
+`1800 → 2520` rather than letting the number change silently. That display is the
+only thing telling a user whether answering was worth it. No further questions are
+returned: one round, not an interrogation.
+
+Design notes worth knowing before changing this:
+
+- **The image is re-uploaded, not cached between calls.** Telling the model
+  "8 pieces" only helps if it can look at the bucket while recalculating, and a
+  second look is its one chance to correct something the first pass misread. The
+  browser still holds the file, so nothing is stored server-side and the
+  never-persisted guarantee is unchanged.
+- **`previousEstimateId` is looked up in the caller's own cache**, never trusted
+  from the body. Otherwise a client could claim any starting numbers and have the
+  model "revise" toward them.
+- **The answer carries the question's text**, not just its id. Questions are never
+  stored — generated, shown, answered, discarded — and the model reads
+  "How was this cooked? → Deep fried" far better than a slug.
+- **`option: null` means skipped**, which is not the same as "Not sure" and is
+  simply not sent to the model.
+- **It counts against the daily vision allowance**, because it is a second real
+  call. Two vision calls per scan, so a 1200/day cap is ~600 scans.
+- **Bounds are the protection on `note`**: 500 characters, three answers, because
+  it is free text going into a prompt.
+
+Errors: `404` if the estimate expired or belongs to someone else, `400` for
+malformed `answers`, plus the same `415`/`413`/`429`/`503` as the first pass.
 
 ---
 

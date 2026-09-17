@@ -11,7 +11,7 @@
  * that obviously is not, because it can be mistaken for the real thing.
  */
 import type { ComputedTrend } from '@app/shared-types';
-import type { AiProvider, PhotoEstimate } from './ai-provider.interface.js';
+import type { AiProvider, PhotoEstimate, PhotoRefinement } from './ai-provider.interface.js';
 
 export function createStubAiProvider(uuid: () => string): AiProvider {
   return {
@@ -35,6 +35,67 @@ export function createStubAiProvider(uuid: () => string): AiProvider {
         },
         confidence: 'low',
         detectedItems: ['unidentified meal'],
+        /*
+         * Two fixed questions, in the exact shape the real prompt asks for.
+         *
+         * They are here so the whole two-pass flow — questions, answers, a
+         * revised estimate — is exercisable with no API key at all. Without
+         * them the entire feature would be untestable in CI, which is the gap
+         * that let three real bugs through earlier.
+         */
+        questions: [
+          {
+            id: 'cooking-method',
+            question: 'How was this cooked?',
+            options: ['Deep fried', 'Air fried', 'Grilled', 'Not sure'],
+          },
+          {
+            id: 'hidden-food',
+            question: 'Is there more food underneath what is visible?',
+            options: ['No', 'Yes, about the same again', 'Not sure'],
+          },
+        ],
+      };
+    },
+
+    /**
+     * Revises the stub estimate in a way that is visibly driven by the answers.
+     *
+     * Deterministic and crude on purpose: "Deep fried" adds, "Air fried"
+     * subtracts, hidden food doubles. That is enough for a test to assert the
+     * answers actually reached the model and changed the number, which is the
+     * property that matters.
+     */
+    async refineFromAnswers(
+      image: Buffer,
+      _mimeType: string,
+      refinement: PhotoRefinement,
+    ): Promise<PhotoEstimate> {
+      const chosen = refinement.answers.map((a) => a.answer.toLowerCase());
+      let multiplier = 1;
+      if (chosen.some((a) => a.includes('deep fried'))) multiplier *= 1.4;
+      if (chosen.some((a) => a.includes('air fried'))) multiplier *= 0.8;
+      if (chosen.some((a) => a.includes('yes'))) multiplier *= 2;
+
+      const scale = (value: number) => Math.round(value * multiplier);
+      const previous = refinement.previous.item;
+
+      return {
+        item: {
+          // Same id: revised, not replaced.
+          id: previous.id,
+          name: previous.name,
+          source: 'ai-photo-estimate',
+          servingLabel: previous.servingLabel,
+          calories: scale(previous.calories),
+          proteinG: scale(previous.proteinG),
+          carbsG: scale(previous.carbsG),
+          fatG: scale(previous.fatG),
+        },
+        // Still low: a stub has not actually looked at anything.
+        confidence: 'low',
+        detectedItems: refinement.previous.detectedItems,
+        questions: [],
       };
     },
 

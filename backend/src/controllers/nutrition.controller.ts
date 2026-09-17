@@ -12,7 +12,8 @@ import {
   logFood,
   searchFoods,
 } from '../services/nutrition/nutrition.service.js';
-import { analysePhoto } from '../services/ai/vision/photo-analysis.service.js';
+import { analysePhoto, refinePhotoEstimate } from '../services/ai/vision/photo-analysis.service.js';
+import { photoRefineSchema } from '../validation/index.js';
 import type { VisionQuota } from '../middlewares/rate-limit.middleware.js';
 
 export function makeNutritionController(deps: AppDeps, quota: VisionQuota) {
@@ -94,5 +95,53 @@ export function makeNutritionController(deps: AppDeps, quota: VisionQuota) {
     })();
   };
 
-  return { search, log, dailyLog, removeEntry, scanPhoto };
+  /**
+   * Second pass over the same photo, with the follow-up questions answered.
+   *
+   * The image is re-uploaded rather than held between requests. That keeps the
+   * "never persisted" guarantee exactly as it is: the browser already has the
+   * file, and the server sees it for the length of one request and writes it
+   * nowhere.
+   *
+   * The answers ride as a JSON field inside the multipart body, since the photo
+   * makes this a multipart request either way.
+   */
+  const refineScan: RequestHandler = (req, res, next) => {
+    void (async () => {
+      try {
+        const file = req.file;
+        if (!file) throw badRequest('Attach the same image under the field name "photo".');
+
+        const raw = (req.body as { answers?: unknown }).answers;
+        if (typeof raw !== 'string') {
+          throw badRequest('Send the answers as a JSON string in the "answers" field.');
+        }
+
+        let decoded: unknown;
+        try {
+          decoded = JSON.parse(raw);
+        } catch {
+          throw badRequest('The "answers" field is not valid JSON.');
+        }
+
+        const parsed = photoRefineSchema.safeParse(decoded);
+        if (!parsed.success) {
+          throw badRequest('The answers were not in the expected shape.');
+        }
+
+        const result = await refinePhotoEstimate(
+          { repos: currentRepos(req), ai: deps.ai, quota },
+          currentUser(req).id,
+          file.buffer,
+          file.mimetype,
+          parsed.data,
+        );
+        res.json(result);
+      } catch (error) {
+        next(error);
+      }
+    })();
+  };
+
+  return { search, log, dailyLog, removeEntry, scanPhoto, refineScan };
 }

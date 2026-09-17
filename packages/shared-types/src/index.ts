@@ -411,12 +411,89 @@ export interface DailyNutritionTotals {
  * does not have. An estimate is never logged automatically (spec rule 3): the client
  * must present it for confirmation or adjustment first.
  */
+/**
+ * One thing the model could not tell from the photo, and the answers it accepts.
+ *
+ * These exist because a photograph does not contain what dominates the error in
+ * a calorie estimate. Air-fried and deep-fried chicken look nearly identical and
+ * differ by the oil the coating absorbed; a bucket shows only its top layer;
+ * oil, butter and dressing are invisible. Two or three answers fix more than any
+ * amount of better guessing at the pixels.
+ */
+export interface ScanQuestion {
+  /** Stable within one scan, used to attach the answer. */
+  id: string;
+  question: string;
+  /**
+   * What can be chosen. Always ends with an explicit "Not sure": forcing a guess
+   * between air-fried and deep-fried produces worse data than an honest unknown,
+   * which the model can answer with a midpoint and a lowered confidence.
+   */
+  options: string[];
+}
+
+/**
+ * One answer.
+ *
+ * Carries the question's own text as well as its id, because the questions are
+ * never stored server-side — they are generated, shown, answered and discarded
+ * within one scan. The model reads "How was this cooked? → Deep fried", and a
+ * slug like "cooking-method" would tell it far less. `option` is null when the
+ * question was left unanswered.
+ */
+export interface ScanAnswer {
+  questionId: string;
+  question: string;
+  option: string | null;
+}
+
 export interface PhotoScanResult {
   estimate: FoodItem;
   confidence: 'low' | 'medium';
   /** What the model believed it saw, for the confirmation screen. */
   detectedItems: string[];
+  /**
+   * Follow-up questions, at most three. Absent or empty means the model had
+   * nothing worth asking, or did not answer in a usable shape — in which case
+   * the flow is exactly what it was before questions existed.
+   */
+  questions?: ScanQuestion[];
   /** Always false. Present so the contract is explicit rather than implied. */
+  autoLogged: false;
+}
+
+/**
+ * A second pass over the same photo, with the questions answered.
+ *
+ * The photo is sent again rather than the model working from its own earlier
+ * description of it. Telling it "8 pieces" is only useful if it can look at the
+ * bucket while recalculating — and a second look is also the only way it can
+ * correct something the first pass got wrong, such as calling wings thighs.
+ *
+ * The image is re-sent from the browser, which still holds it. Nothing is stored
+ * server-side between the two calls.
+ */
+export interface PhotoRefineInput {
+  /** The estimate the first pass produced, so the model revises rather than restarts. */
+  previousEstimateId: string;
+  answers: ScanAnswer[];
+  /** Anything the questions did not cover, in the user's own words. */
+  note?: string;
+}
+
+/** The revised estimate, alongside what it replaced so the change is visible. */
+export interface PhotoRefineResult {
+  estimate: FoodItem;
+  confidence: 'low' | 'medium';
+  detectedItems: string[];
+  /**
+   * Calories before the answers were taken into account.
+   *
+   * Shown as "620 → 890" rather than replacing the number silently: without it
+   * there is no way to tell whether answering was worth doing, and next time the
+   * questions get skipped.
+   */
+  previousCalories: number;
   autoLogged: false;
 }
 

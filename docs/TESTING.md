@@ -1,9 +1,9 @@
 # Testing
 
 ```bash
-npm test                              # both workspaces — 246 tests
-npm test --workspace backend          # 178 tests
-npm test --workspace frontend         # 68 tests
+npm test                              # both workspaces — 420 tests
+npm test --workspace backend          # 244 tests
+npm test --workspace frontend         # 176 tests
 ./backend/supabase/verify-migration.sh  # 22 schema/RLS assertions (needs Postgres)
 ```
 

@@ -227,6 +227,39 @@ export const foodLogQuerySchema = z.object({ date: isoDateSchema }).strict();
 export const overviewQuerySchema = z.object({ date: isoDateSchema.optional() }).strict();
 
 // ---------------------------------------------------------------------------
+// Photo scan refinement
+// ---------------------------------------------------------------------------
+
+/**
+ * The answers to a scan's follow-up questions.
+ *
+ * Bounded at every level, because all of it is free text that ends up in a
+ * prompt: three answers matching the three questions the parser will ever
+ * produce, and a note long enough to be useful ("the rice had butter in it")
+ * without being an essay. The `note` cap matters most — it is the one field with
+ * no fixed set of values behind it.
+ */
+export const photoRefineSchema = z
+  .object({
+    previousEstimateId: z.string().min(1).max(200),
+    answers: z
+      .array(
+        z
+          .object({
+            questionId: z.string().min(1).max(60),
+            question: z.string().min(1).max(300),
+            // null means the question was skipped, which is different from an
+            // explicit "Not sure" and is simply not sent to the model.
+            option: z.string().min(1).max(120).nullable(),
+          })
+          .strict(),
+      )
+      .max(3),
+    note: z.string().max(500).optional(),
+  })
+  .strict();
+
+// ---------------------------------------------------------------------------
 // Body composition
 // ---------------------------------------------------------------------------
 

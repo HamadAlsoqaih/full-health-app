@@ -14,7 +14,7 @@
  * Online-only, unavoidably — it needs the model.
  */
 import { useRef, useState } from 'react';
-import type { PhotoScanResult } from '@app/shared-types';
+import type { PhotoScanResult, ScanAnswer } from '@app/shared-types';
 import { ApiRequestError } from '@/shared/lib/apiClient';
 import { useApi } from '@/shared/lib/ApiProvider';
 import { Button, Card } from '@/shared/components/Field';
@@ -24,6 +24,7 @@ import { useToast } from '@/shared/components/Toast';
 import { nutritionApi } from '../api';
 import { useLogFood } from '../hooks/useDailyLog';
 import { SaveToMyFoods } from './SaveToMyFoods';
+import { ScanQuestions } from './ScanQuestions';
 import { todayIso } from '@/shared/lib/dates';
 
 const MAX_BYTES = 8 * 1024 * 1024;
@@ -58,6 +59,24 @@ export function PhotoScan({ onDone }: PhotoScanProps) {
    */
   const [file, setFile] = useState<File | null>(null);
 
+  /**
+   * Whether the questions have been dealt with — answered or skipped.
+   *
+   * Separate from whether there ARE questions, so skipping is sticky: the card
+   * does not reappear after being dismissed.
+   */
+  const [questionsDone, setQuestionsDone] = useState(false);
+  const [refining, setRefining] = useState(false);
+
+  /**
+   * Calories before the answers were taken into account.
+   *
+   * Shown as "620 → 890" rather than letting the number change silently. This
+   * is what tells you the questions were worth answering; without it you learn
+   * nothing and skip them next time.
+   */
+  const [previousCalories, setPreviousCalories] = useState<number | null>(null);
+
   const scan = async (chosen: File) => {
     // Checked client-side too, so the user is not made to upload 12MB over mobile
     // data before being told it is too large.
@@ -72,6 +91,8 @@ export function PhotoScan({ onDone }: PhotoScanProps) {
     setBusy(true);
     setResult(null);
     setFile(chosen);
+    setQuestionsDone(false);
+    setPreviousCalories(null);
 
     // Local preview only; the file is never uploaded anywhere but the scan call.
     const url = URL.createObjectURL(chosen);
@@ -87,6 +108,39 @@ export function PhotoScan({ onDone }: PhotoScanProps) {
       setError(caught);
     } finally {
       setBusy(false);
+    }
+  };
+
+  /**
+   * Puts the answers back to the model with the same photo.
+   *
+   * A failure here is not fatal: the first estimate is still on screen and
+   * still loggable, so the questions are treated as done either way rather than
+   * trapping someone in a retry loop over an optional refinement.
+   */
+  const refine = async (answers: ScanAnswer[], note: string) => {
+    if (!file || !result) return;
+
+    setRefining(true);
+    try {
+      const refined = await nutritionApi(client).refineScan(file, {
+        previousEstimateId: result.estimate.id,
+        answers,
+        ...(note.trim() ? { note: note.trim() } : {}),
+      });
+
+      setPreviousCalories(refined.previousCalories);
+      setResult({
+        estimate: refined.estimate,
+        confidence: refined.confidence,
+        detectedItems: refined.detectedItems,
+        autoLogged: false,
+      });
+    } catch {
+      toast.show('Could not update the estimate. The first one still stands.', 'error');
+    } finally {
+      setRefining(false);
+      setQuestionsDone(true);
     }
   };
 
@@ -172,6 +226,20 @@ export function PhotoScan({ onDone }: PhotoScanProps) {
         </div>
       ) : null}
 
+      {/*
+        The questions come before the estimate on screen, because they are the
+        thing to act on. The estimate below them is provisional until they are
+        answered or skipped.
+      */}
+      {result && !questionsDone && (result.questions?.length ?? 0) > 0 ? (
+        <ScanQuestions
+          questions={result.questions!}
+          busy={refining}
+          onSubmit={(answers, note) => void refine(answers, note)}
+          onSkip={() => setQuestionsDone(true)}
+        />
+      ) : null}
+
       {result ? (
         <Card>
           <div className="flex flex-col gap-4">
@@ -189,6 +257,30 @@ export function PhotoScan({ onDone }: PhotoScanProps) {
                   {result.confidence} confidence
                 </span>
               </div>
+
+              {/*
+                The number's history, not just its current value. "620 → 890"
+                is what makes answering the questions feel worth it; a number
+                that silently changes teaches nothing and gets skipped next
+                time.
+              */}
+              {previousCalories !== null &&
+              Math.round(previousCalories) !== Math.round(result.estimate.calories) ? (
+                <p className="text-sm text-text-muted" role="status">
+                  Updated from <span className="line-through">{Math.round(previousCalories)}</span>{' '}
+                  <span className="font-medium text-text">
+                    {Math.round(result.estimate.calories)} kcal
+                  </span>{' '}
+                  after your answers.
+                </p>
+              ) : null}
+
+              {previousCalories !== null &&
+              Math.round(previousCalories) === Math.round(result.estimate.calories) ? (
+                <p className="text-sm text-text-muted" role="status">
+                  Your answers did not change the estimate.
+                </p>
+              ) : null}
 
               {result.detectedItems.length > 0 ? (
                 <p className="text-sm text-text-muted">
@@ -243,7 +335,9 @@ export function PhotoScan({ onDone }: PhotoScanProps) {
                 loading={logFood.isPending}
                 disabled={servingSize === null}
               >
-                Log this
+                {questionsDone || (result.questions?.length ?? 0) === 0
+                  ? 'Log this'
+                  : 'Log this anyway'}
               </Button>
 
               {/*

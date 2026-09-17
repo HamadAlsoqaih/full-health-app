@@ -21,6 +21,7 @@ import type {
   ComputedTrend,
   FoodItem,
   NotificationEvent,
+  ScanQuestion,
 } from '@app/shared-types';
 import type { Repositories, RepositoryContext } from './repositories/index.js';
 
@@ -78,6 +79,19 @@ export interface PhotoEstimate {
   item: FoodItem;
   confidence: 'low' | 'medium';
   detectedItems: string[];
+  /**
+   * What the model could not tell from the photo. Empty is normal and means the
+   * flow is the plain single-shot one.
+   */
+  questions: ScanQuestion[];
+}
+
+/** The answers, ready to be put back to the model with the same photo. */
+export interface PhotoRefinement {
+  previous: PhotoEstimate;
+  /** Question text paired with the chosen option, since that is what the model reads. */
+  answers: Array<{ question: string; answer: string }>;
+  note?: string;
 }
 
 /**
@@ -93,6 +107,19 @@ export interface AiProvider {
    * only for the duration of this call and is never persisted.
    */
   estimateFromPhoto(image: Buffer, mimeType: string): Promise<PhotoEstimate>;
+  /**
+   * Revises an estimate given the same photo and the user's answers.
+   *
+   * The image is passed again deliberately. Telling the model "8 pieces" only
+   * helps if it can look at the bucket while recalculating, and a second look is
+   * its only chance to correct something the first pass misread. Providers
+   * without vision throw.
+   */
+  refineFromAnswers(
+    image: Buffer,
+    mimeType: string,
+    refinement: PhotoRefinement,
+  ): Promise<PhotoEstimate>;
   /**
    * Rephrases an already-computed trend in plain language. It must not alter the
    * numbers: all body-composition arithmetic is deterministic (spec rule 4).

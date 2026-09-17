@@ -59,6 +59,9 @@ function hangingAi(): AiProvider {
     async estimateFromPhoto(): Promise<PhotoEstimate> {
       throw new Error('not used');
     },
+    async refineFromAnswers(): Promise<PhotoEstimate> {
+      throw new Error('not used');
+    },
     phraseTrend() {
       return new Promise<string>(() => {
         /* never resolves */
@@ -73,6 +76,9 @@ function failingAi(): AiProvider {
     name: 'stub',
     supportsVision: true,
     async estimateFromPhoto(): Promise<PhotoEstimate> {
+      throw new Error('not used');
+    },
+    async refineFromAnswers(): Promise<PhotoEstimate> {
       throw new Error('not used');
     },
     async phraseTrend(): Promise<string> {

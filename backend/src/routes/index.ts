@@ -170,6 +170,12 @@ export function createRouter(deps: AppDeps): Router {
     photoUpload.single('photo'),
     nutrition.scanPhoto,
   );
+  nutritionRouter.post(
+    '/scan-photo/refine',
+    photoScanLimiter,
+    photoUpload.single('photo'),
+    nutrition.refineScan,
+  );
   router.use('/nutrition', nutritionRouter);
 
   const bodyCompRouter = Router();

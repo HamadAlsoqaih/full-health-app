@@ -10,8 +10,12 @@ import type { ComputedTrend, FoodItem } from '@app/shared-types';
 import { config } from '../../../config/index.js';
 import { aiUnavailable } from '../../../errors.js';
 import { logger } from '../../../logger.js';
-import type { AiProvider, PhotoEstimate } from './ai-provider.interface.js';
-import { NUTRITION_PHOTO_SYSTEM_PROMPT } from '../prompts/nutrition-photo.prompt.js';
+import type { AiProvider, PhotoEstimate, PhotoRefinement } from './ai-provider.interface.js';
+import {
+  NUTRITION_PHOTO_SYSTEM_PROMPT,
+  NUTRITION_REFINE_SYSTEM_PROMPT,
+  buildRefinePrompt,
+} from '../prompts/nutrition-photo.prompt.js';
 import {
   BODY_COMP_SYSTEM_PROMPT,
   buildBodyCompPrompt,
@@ -71,10 +75,90 @@ export function createGeminiProvider(uuid: () => string): AiProvider {
           carbsG: parsed.carbsG,
           fatG: parsed.fatG,
         };
-        return { item, confidence: parsed.confidence, detectedItems: parsed.detectedItems };
+        return {
+          item,
+          confidence: parsed.confidence,
+          detectedItems: parsed.detectedItems,
+          questions: parsed.questions,
+        };
       } catch (error) {
         logger.warn({ err: error }, 'Gemini photo estimate failed');
         throw aiUnavailable('Could not analyse that photo right now.', error);
+      }
+    },
+
+    /**
+     * Second pass: same image, plus the answers.
+     *
+     * The photo is sent again rather than the model reasoning from its own
+     * earlier text. "8 pieces" is only useful if it can look at the bucket while
+     * recalculating, and this is its one chance to notice it called wings thighs.
+     *
+     * The id is carried over from the first estimate, so the cache row the
+     * confirmation step resolves against is replaced rather than duplicated.
+     */
+    async refineFromAnswers(
+      image: Buffer,
+      mimeType: string,
+      refinement: PhotoRefinement,
+    ): Promise<PhotoEstimate> {
+      try {
+        const response = await retryTransient(
+          () =>
+            client.models.generateContent({
+              model,
+              contents: [
+                {
+                  role: 'user',
+                  parts: [
+                    { text: NUTRITION_REFINE_SYSTEM_PROMPT },
+                    { inlineData: { mimeType, data: image.toString('base64') } },
+                    {
+                      text: buildRefinePrompt({
+                        previous: {
+                          name: refinement.previous.item.name,
+                          servingLabel: refinement.previous.item.servingLabel,
+                          calories: refinement.previous.item.calories,
+                          proteinG: refinement.previous.item.proteinG,
+                          carbsG: refinement.previous.item.carbsG,
+                          fatG: refinement.previous.item.fatG,
+                        },
+                        answers: refinement.answers,
+                        ...(refinement.note ? { note: refinement.note } : {}),
+                      }),
+                    },
+                  ],
+                },
+              ],
+              config: { temperature: 0, responseMimeType: 'application/json' },
+            }),
+          { label: 'gemini.refineFromAnswers' },
+        );
+
+        const parsed = parsePhotoEstimate(response.text ?? '');
+        if (!parsed) throw aiUnavailable('The AI response could not be understood.');
+
+        return {
+          item: {
+            // Same id as the first pass: the estimate was revised, not replaced.
+            id: refinement.previous.item.id,
+            name: parsed.name,
+            source: 'ai-photo-estimate',
+            servingLabel: parsed.servingLabel,
+            calories: parsed.calories,
+            proteinG: parsed.proteinG,
+            carbsG: parsed.carbsG,
+            fatG: parsed.fatG,
+          },
+          confidence: parsed.confidence,
+          detectedItems: parsed.detectedItems,
+          // No second round of questions. One round is the deal; asking again
+          // would turn logging a meal into an interrogation.
+          questions: [],
+        };
+      } catch (error) {
+        logger.warn({ err: error }, 'Gemini estimate refinement failed');
+        throw aiUnavailable('Could not update that estimate right now.', error);
       }
     },
 

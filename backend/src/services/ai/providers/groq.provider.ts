@@ -38,6 +38,14 @@ export function createGroqProvider(
       );
     },
 
+    async refineFromAnswers(): Promise<PhotoEstimate> {
+      // Unreachable in practice, since the first pass already refused. Stated
+      // rather than left to a runtime surprise if a caller ever skips ahead.
+      throw aiUnavailable(
+        'Photo scanning needs a vision-capable AI provider. Set AI_PROVIDER=gemini to enable it.',
+      );
+    },
+
     async phraseTrend(trend: ComputedTrend): Promise<string> {
       try {
         const data = await retryTransient(
