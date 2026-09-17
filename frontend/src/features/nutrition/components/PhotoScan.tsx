@@ -23,6 +23,7 @@ import { ErrorState } from '@/shared/components/ErrorState';
 import { useToast } from '@/shared/components/Toast';
 import { nutritionApi } from '../api';
 import { useLogFood } from '../hooks/useDailyLog';
+import { SaveToMyFoods } from './SaveToMyFoods';
 import { todayIso } from '@/shared/lib/dates';
 
 const MAX_BYTES = 8 * 1024 * 1024;
@@ -244,6 +245,13 @@ export function PhotoScan({ onDone }: PhotoScanProps) {
               >
                 Log this
               </Button>
+
+              {/*
+                Separate from logging on purpose. You might save something to
+                eat later without logging it now, or log a one-off without
+                keeping it. Neither implies the other.
+              */}
+              <SaveToMyFoods estimate={result.estimate} />
               <Button variant="secondary" onClick={() => inputRef.current?.click()}>
                 Retake photo
               </Button>
