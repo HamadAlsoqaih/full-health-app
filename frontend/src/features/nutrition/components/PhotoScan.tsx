@@ -17,7 +17,8 @@ import { useRef, useState } from 'react';
 import type { PhotoScanResult } from '@app/shared-types';
 import { ApiRequestError } from '@/shared/lib/apiClient';
 import { useApi } from '@/shared/lib/ApiProvider';
-import { Button, Card, NumberField } from '@/shared/components/Field';
+import { Button, Card } from '@/shared/components/Field';
+import { ServingSizeField } from '@/shared/components/ServingSizeField';
 import { ErrorState } from '@/shared/components/ErrorState';
 import { useToast } from '@/shared/components/Toast';
 import { nutritionApi } from '../api';
@@ -39,7 +40,8 @@ export function PhotoScan({ onDone }: PhotoScanProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>();
   const [result, setResult] = useState<PhotoScanResult | null>(null);
-  const [multiplier, setMultiplier] = useState('1');
+  // One serving is whatever the scan named; this is how much of it was eaten.
+  const [servingSize, setServingSize] = useState<number | null>(1);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   /**
@@ -79,7 +81,7 @@ export function PhotoScan({ onDone }: PhotoScanProps) {
 
     try {
       setResult(await nutritionApi(client).scanPhoto(chosen));
-      setMultiplier('1');
+      setServingSize(1);
     } catch (caught) {
       setError(caught);
     } finally {
@@ -95,9 +97,7 @@ export function PhotoScan({ onDone }: PhotoScanProps) {
   };
 
   const confirm = async () => {
-    if (!result) return;
-    const parsed = Number.parseFloat(multiplier);
-    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    if (!result || servingSize === null) return;
 
     try {
       // Goes through the ordinary log endpoint: the server re-resolves the macros
@@ -105,7 +105,7 @@ export function PhotoScan({ onDone }: PhotoScanProps) {
       await logFood.mutateAsync({
         foodItemId: result.estimate.id,
         date: todayIso(),
-        servingMultiplier: parsed,
+        servingMultiplier: servingSize,
       });
       toast.show('Logged.', 'success');
       onDone();
@@ -114,8 +114,7 @@ export function PhotoScan({ onDone }: PhotoScanProps) {
     }
   };
 
-  const servings = Number.parseFloat(multiplier) || 0;
-  const scaled = (value: number) => Math.round(value * servings);
+  const scaled = (value: number) => Math.round(value * (servingSize ?? 0));
 
   return (
     <div className="flex flex-col gap-4">
@@ -201,11 +200,26 @@ export function PhotoScan({ onDone }: PhotoScanProps) {
               </p>
             </div>
 
-            <NumberField
-              label="Servings"
-              hint={`One serving is ${result.estimate.servingLabel}.`}
-              value={multiplier}
-              onChange={(event) => setMultiplier(event.target.value)}
+            {/*
+              Two separate things, shown as two separate things: what one
+              serving IS, which the model named, and how much of it was eaten.
+              Collapsing them into a single "Servings" box left the fraction
+              with nothing to be a fraction OF.
+            */}
+            <div className="flex flex-col gap-1">
+              <span className="text-sm font-medium text-text">Serving</span>
+              <p className="min-h-touch flex items-center rounded-lg bg-surface-raised px-3 text-base text-text">
+                {result.estimate.servingLabel}
+              </p>
+              <p className="text-xs text-text-muted">
+                What the whole photo was estimated as. Edit it after logging if it is wrong.
+              </p>
+            </div>
+
+            <ServingSizeField
+              value={servingSize}
+              onChange={setServingSize}
+              servingLabel={result.estimate.servingLabel}
             />
 
             <dl className="grid grid-cols-4 gap-2 rounded-lg bg-surface-raised p-3 text-center">
@@ -223,7 +237,11 @@ export function PhotoScan({ onDone }: PhotoScanProps) {
             </dl>
 
             <div className="flex flex-col gap-2">
-              <Button onClick={() => void confirm()} loading={logFood.isPending}>
+              <Button
+                onClick={() => void confirm()}
+                loading={logFood.isPending}
+                disabled={servingSize === null}
+              >
                 Log this
               </Button>
               <Button variant="secondary" onClick={() => inputRef.current?.click()}>
