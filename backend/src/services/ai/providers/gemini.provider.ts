@@ -17,6 +17,7 @@ import {
   buildBodyCompPrompt,
 } from '../prompts/body-comp-evaluation.prompt.js';
 import { parsePhotoEstimate } from '../vision/parse-estimate.js';
+import { retryTransient } from '../retry.js';
 
 export function createGeminiProvider(uuid: () => string): AiProvider {
   const apiKey = config.ai.geminiApiKey;
@@ -35,19 +36,26 @@ export function createGeminiProvider(uuid: () => string): AiProvider {
 
     async estimateFromPhoto(image: Buffer, mimeType: string): Promise<PhotoEstimate> {
       try {
-        const response = await client.models.generateContent({
-          model,
-          contents: [
-            {
-              role: 'user',
-              parts: [
-                { text: NUTRITION_PHOTO_SYSTEM_PROMPT },
-                { inlineData: { mimeType, data: image.toString('base64') } },
+        // Retried only on a transient failure — a demand spike or a dropped
+        // connection. A retired model or a rejected key fails once, with the
+        // real reason, because retrying those only delays the truth.
+        const response = await retryTransient(
+          () =>
+            client.models.generateContent({
+              model,
+              contents: [
+                {
+                  role: 'user',
+                  parts: [
+                    { text: NUTRITION_PHOTO_SYSTEM_PROMPT },
+                    { inlineData: { mimeType, data: image.toString('base64') } },
+                  ],
+                },
               ],
-            },
-          ],
-          config: { temperature: 0, responseMimeType: 'application/json' },
-        });
+              config: { temperature: 0, responseMimeType: 'application/json' },
+            }),
+          { label: 'gemini.estimateFromPhoto' },
+        );
 
         const text = response.text ?? '';
         const parsed = parsePhotoEstimate(text);
@@ -72,16 +80,20 @@ export function createGeminiProvider(uuid: () => string): AiProvider {
 
     async phraseTrend(trend: ComputedTrend): Promise<string> {
       try {
-        const response = await client.models.generateContent({
-          model,
-          contents: [
-            {
-              role: 'user',
-              parts: [{ text: BODY_COMP_SYSTEM_PROMPT }, { text: buildBodyCompPrompt(trend) }],
-            },
-          ],
-          config: { temperature: 0.2 },
-        });
+        const response = await retryTransient(
+          () =>
+            client.models.generateContent({
+              model,
+              contents: [
+                {
+                  role: 'user',
+                  parts: [{ text: BODY_COMP_SYSTEM_PROMPT }, { text: buildBodyCompPrompt(trend) }],
+                },
+              ],
+              config: { temperature: 0.2 },
+            }),
+          { label: 'gemini.phraseTrend' },
+        );
         const text = (response.text ?? '').trim();
         if (!text) throw aiUnavailable('The AI returned an empty summary.');
         return text;

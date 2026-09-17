@@ -42,10 +42,23 @@ export function PhotoScan({ onDone }: PhotoScanProps) {
   const [multiplier, setMultiplier] = useState('1');
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-  const scan = async (file: File) => {
+  /**
+   * The chosen photo, kept so a failure does not cost the user the photo.
+   *
+   * Previously only a preview URL was held, and Retry reopened the file picker
+   * — so a scan that failed because Google was momentarily busy made you find
+   * and select your lunch photo again. The file is already in the page; there is
+   * no reason to ask for it twice.
+   *
+   * It stays in the browser. The server holds it only for the length of one
+   * request and never writes it anywhere.
+   */
+  const [file, setFile] = useState<File | null>(null);
+
+  const scan = async (chosen: File) => {
     // Checked client-side too, so the user is not made to upload 12MB over mobile
     // data before being told it is too large.
-    if (file.size > MAX_BYTES) {
+    if (chosen.size > MAX_BYTES) {
       setError(
         new ApiRequestError(413, 'PAYLOAD_TOO_LARGE', 'That image is too large. Try another.'),
       );
@@ -55,22 +68,30 @@ export function PhotoScan({ onDone }: PhotoScanProps) {
     setError(undefined);
     setBusy(true);
     setResult(null);
+    setFile(chosen);
 
     // Local preview only; the file is never uploaded anywhere but the scan call.
-    const url = URL.createObjectURL(file);
+    const url = URL.createObjectURL(chosen);
     setPreviewUrl((current) => {
       if (current) URL.revokeObjectURL(current);
       return url;
     });
 
     try {
-      setResult(await nutritionApi(client).scanPhoto(file));
+      setResult(await nutritionApi(client).scanPhoto(chosen));
       setMultiplier('1');
     } catch (caught) {
       setError(caught);
     } finally {
       setBusy(false);
     }
+  };
+
+  /** Re-sends the photo already on screen. Only falls back to the picker if
+   *  there somehow isn't one — an oversized file, say, which was never kept. */
+  const retry = () => {
+    if (file) void scan(file);
+    else inputRef.current?.click();
   };
 
   const confirm = async () => {
@@ -140,7 +161,16 @@ export function PhotoScan({ onDone }: PhotoScanProps) {
         </Card>
       ) : null}
 
-      {error ? <ErrorState error={error} onRetry={() => inputRef.current?.click()} /> : null}
+      {error ? (
+        <div className="flex flex-col gap-2">
+          <ErrorState error={error} onRetry={retry} />
+          {file ? (
+            <Button variant="ghost" onClick={() => inputRef.current?.click()}>
+              Use a different photo
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
 
       {result ? (
         <Card>

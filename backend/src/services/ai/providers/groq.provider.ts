@@ -8,6 +8,7 @@
 import type { ComputedTrend } from '@app/shared-types';
 import { config } from '../../../config/index.js';
 import { aiUnavailable } from '../../../errors.js';
+import { retryTransient } from '../retry.js';
 import { logger } from '../../../logger.js';
 import type { AiProvider, PhotoEstimate } from './ai-provider.interface.js';
 import {
@@ -39,29 +40,40 @@ export function createGroqProvider(
 
     async phraseTrend(trend: ComputedTrend): Promise<string> {
       try {
-        const response = await fetchImpl(ENDPOINT, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`,
+        const data = await retryTransient(
+          async () => {
+            const response = await fetchImpl(ENDPOINT, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${apiKey}`,
+              },
+              body: JSON.stringify({
+                model: config.ai.groqModel,
+                temperature: 0.2,
+                max_tokens: 200,
+                messages: [
+                  { role: 'system', content: BODY_COMP_SYSTEM_PROMPT },
+                  { role: 'user', content: buildBodyCompPrompt(trend) },
+                ],
+              }),
+              signal: AbortSignal.timeout(config.evaluation.providerTimeoutMs),
+            });
+
+            if (!response.ok) {
+              // `status` is what makes the retry decision: a 429 or 503 is worth
+              // another attempt, a 401 is not.
+              const failure = aiUnavailable(`Groq responded ${response.status}.`) as Error & {
+                status?: number;
+              };
+              failure.status = response.status;
+              throw failure;
+            }
+
+            return (await response.json()) as GroqResponse;
           },
-          body: JSON.stringify({
-            model: config.ai.groqModel,
-            temperature: 0.2,
-            max_tokens: 200,
-            messages: [
-              { role: 'system', content: BODY_COMP_SYSTEM_PROMPT },
-              { role: 'user', content: buildBodyCompPrompt(trend) },
-            ],
-          }),
-          signal: AbortSignal.timeout(config.evaluation.providerTimeoutMs),
-        });
-
-        if (!response.ok) {
-          throw aiUnavailable(`Groq responded ${response.status}.`);
-        }
-
-        const data = (await response.json()) as GroqResponse;
+          { label: 'groq.phraseTrend' },
+        );
         const text = data.choices?.[0]?.message?.content?.trim();
         if (!text) throw aiUnavailable('Groq returned an empty summary.');
         return text;

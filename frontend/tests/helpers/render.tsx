@@ -40,6 +40,7 @@ export function makeUser(overrides: Partial<AuthUser> = {}): AuthUser {
 export interface RecordedRequest {
   url: string;
   method: string;
+  /** Parsed JSON, or a plain object of field names for a multipart upload. */
   body: unknown;
 }
 
@@ -47,7 +48,11 @@ export interface StubRoute {
   /** Matched as a substring of the URL. */
   match: string;
   method?: string;
-  status?: number;
+  /**
+   * Fixed status, or a function so one route can fail then succeed — which is
+   * what testing a recovery path needs.
+   */
+  status?: number | (() => number);
   /** Static body, or a function for a response that changes between calls. */
   response: unknown | (() => unknown);
 }
@@ -56,14 +61,38 @@ export interface StubRoute {
 export function stubFetch(routes: StubRoute[]) {
   const requests: RecordedRequest[] = [];
 
+  /**
+   * Records a request body without assuming it is JSON.
+   *
+   * It used to call JSON.parse unconditionally, which threw on a FormData body
+   * — so the photo-scan upload never reached a stub at all and every test of it
+   * saw a thrown parse error instead of the response it had configured. That
+   * silently made multipart uploads untestable.
+   */
+  const readBody = (body: BodyInit | null | undefined): unknown => {
+    if (!body) return undefined;
+    if (typeof FormData !== 'undefined' && body instanceof FormData) {
+      // Field names and, for files, their names and sizes — enough to assert
+      // what was uploaded without holding the bytes.
+      return Object.fromEntries(
+        [...body.entries()].map(([key, value]) => [
+          key,
+          value instanceof File ? { name: value.name, size: value.size, type: value.type } : value,
+        ]),
+      );
+    }
+    if (typeof body !== 'string') return body;
+    try {
+      return JSON.parse(body);
+    } catch {
+      return body;
+    }
+  };
+
   const impl = async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     const method = (init?.method ?? 'GET').toUpperCase();
-    requests.push({
-      url,
-      method,
-      body: init?.body ? JSON.parse(String(init.body)) : undefined,
-    });
+    requests.push({ url, method, body: readBody(init?.body) });
 
     const route = routes.find(
       (r) => url.includes(r.match) && (!r.method || r.method.toUpperCase() === method),
@@ -81,8 +110,10 @@ export function stubFetch(routes: StubRoute[]) {
     const body =
       typeof route.response === 'function' ? (route.response as () => unknown)() : route.response;
 
+    const status = typeof route.status === 'function' ? route.status() : (route.status ?? 200);
+
     return new Response(body === undefined ? '' : JSON.stringify(body), {
-      status: route.status ?? 200,
+      status,
       headers: { 'Content-Type': 'application/json' },
     });
   };
