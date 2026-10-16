@@ -123,12 +123,28 @@ export interface UserPreferences {
   ai: AiPreferences;
 }
 
+export type ActivityLevel = 'sedentary' | 'light' | 'moderate' | 'very' | 'extra';
+
+/**
+ * What a maintenance formula needs, for the weeks before the user's own weight
+ * trend can measure it. Sex is the formula's variable, nothing more: Mifflin-St
+ * Jeor has one coefficient set per sex and no third option.
+ */
+export interface BodyProfile {
+  heightCm: number;
+  birthYear: number;
+  sex: 'male' | 'female';
+  activityLevel: ActivityLevel;
+}
+
 export interface AuthUser {
   id: string;
   email: string;
   displayName?: string;
   units: UnitSystem;
   goals?: Goals;
+  /** Absent until the user fills it in; nothing else depends on it. */
+  body?: BodyProfile;
   preferences: UserPreferences;
   onboarding: OnboardingProgress;
   createdAt: string;
@@ -152,6 +168,7 @@ export interface UserUpdateInput {
     ai?: Partial<AiPreferences>;
   };
   goals?: Goals;
+  body?: BodyProfile;
 }
 
 // ---------------------------------------------------------------------------
@@ -531,6 +548,17 @@ export interface InsufficientTrendData {
   daysNeeded: number;
   weightEntryCount: number;
   daysWithFoodLogs: number;
+  /**
+   * Present while the first two weeks of a diet are being skipped: early loss is
+   * mostly glycogen and water, which would read as a huge deficit.
+   */
+  earlyDaysSkippedUntil?: string;
+}
+
+/** One logged day's calories, for logging-quality checks on the client. */
+export interface DailyCalories {
+  date: string;
+  calories: number;
 }
 
 /**
@@ -555,6 +583,15 @@ export interface ComputedTrend {
   daysWithFoodLogs: number;
   /** Intake implied by the observed weight change, from the 7700 kcal/kg convention. */
   estimatedMaintenanceCalories: number;
+  /** Every logged day in the window, partial days included. */
+  dailyCalories: DailyCalories[];
+  /**
+   * Days under 60% of the user's median intake. Almost always a day logged only
+   * in part, so they are left out of the averages and listed here instead.
+   */
+  partialDays: string[];
+  /** See InsufficientTrendData.earlyDaysSkippedUntil. */
+  earlyDaysSkippedUntil?: string;
   /** Deterministic, rule-derived advice. Phrasing for display comes from the AI layer. */
   recommendation: TrendRecommendation;
 }

@@ -40,10 +40,19 @@ export interface OnTrackVerdict {
   detail: string;
   targetRateKgPerWeek: number;
   /** Average intake minus the energy the fitted weight change accounts for. */
+  measuredMaintenanceCalories: number;
+  /** Measured, blended with the formula while the trend is under four weeks old. */
   maintenanceCalories: number;
+  /** Share of maintenance taken from the measured trend, 0–1. */
+  blendWeight: number;
   /** The user's saved targets, when both calories and protein are set. */
   current: MacroTargets | null;
+  /** This week's targets: at most MAX_WEEKLY_STEP_KCAL from current intake. */
   suggested: MacroTargets;
+  /** Where the weekly steps are heading. */
+  goal: MacroTargets;
+  /** Weeks of steps to reach the goal, counting this one; 1 when this week is the goal. */
+  weeksToGoal: number;
   /** True when the suggestion differs enough from the current targets to act on. */
   shouldChange: boolean;
 }
@@ -91,51 +100,116 @@ function explain(status: OnTrackStatus, goal: Goals['goal'], rate: number, targe
   }
 }
 
-export function onTrackVerdict(trend: ComputedTrend, goals: Goals | undefined): OnTrackVerdict {
+/** Largest change to daily calories in one week, so a correction is livable. */
+export const MAX_WEEKLY_STEP_KCAL = 500;
+/** Days of measured trend after which the formula no longer counts at all. */
+export const FULL_TRUST_DAYS = 28;
+
+function proteinFor(weightKg: number, saved: number | undefined): number {
+  return saved !== undefined &&
+    saved >= weightKg * PROTEIN_G_PER_KG.min &&
+    saved <= weightKg * PROTEIN_G_PER_KG.max
+    ? saved
+    : Math.round(weightKg * PROTEIN_G_PER_KG.default);
+}
+
+export interface VerdictOptions {
+  /** Mifflin-St Jeor estimate, when the user has filled in their body profile. */
+  formulaMaintenance?: number;
+}
+
+export function onTrackVerdict(
+  trend: ComputedTrend,
+  goals: Goals | undefined,
+  options: VerdictOptions = {},
+): OnTrackVerdict {
   const goal = goals?.goal ?? 'maintain';
   const target = goals?.targetRateKgPerWeek ?? DEFAULT_TARGET_RATE[goal];
   const rate = trend.ratePerWeekKg;
   const { status, title } = classify(goal, rate, target);
-
   const weight = trend.endWeightKg;
 
   // body-composition-tracker's formula: maintenance is what you eat minus the
-  // energy your weight change accounts for, and the target is maintenance plus
-  // the surplus or deficit the planned rate needs.
-  const maintenance = trend.avgDailyCalories - (rate * KCAL_PER_KG) / 7;
-  const suggestedCalories =
+  // energy your weight change accounts for. The server computes exactly this
+  // from the fitted rate; using its figure keeps both cards on one number.
+  const measured = trend.estimatedMaintenanceCalories;
+
+  // Blended with the formula while the trend is young: a two-week trend is
+  // still noisy, a four-week one is not. Without a formula, measured alone.
+  const { formulaMaintenance } = options;
+  const blendWeight =
+    formulaMaintenance === undefined ? 1 : Math.min(1, trend.days / FULL_TRUST_DAYS);
+  const maintenance =
+    formulaMaintenance === undefined
+      ? measured
+      : blendWeight * measured + (1 - blendWeight) * formulaMaintenance;
+
+  // The destination, then this week's step toward it from what is eaten now.
+  const goalCalories =
     status === 'on-track'
       ? round25(trend.avgDailyCalories)
       : round25(maintenance + (target * KCAL_PER_KG) / 7);
+  const from = trend.avgDailyCalories;
+  const thisWeekCalories = round25(
+    Math.max(from - MAX_WEEKLY_STEP_KCAL, Math.min(from + MAX_WEEKLY_STEP_KCAL, goalCalories)),
+  );
+  const weeksToGoal = Math.max(
+    1,
+    Math.ceil((Math.abs(goalCalories - from) - 12.5) / MAX_WEEKLY_STEP_KCAL),
+  );
 
-  const saved = goals?.targetProteinG;
-  const suggestedProtein =
-    saved !== undefined &&
-    saved >= weight * PROTEIN_G_PER_KG.min &&
-    saved <= weight * PROTEIN_G_PER_KG.max
-      ? saved
-      : Math.round(weight * PROTEIN_G_PER_KG.default);
-
+  const protein = proteinFor(weight, goals?.targetProteinG);
   const current =
     goals?.targetCalories !== undefined && goals.targetProteinG !== undefined
       ? macroTargets(goals.targetCalories, goals.targetProteinG, weight)
       : null;
-  const suggested = macroTargets(suggestedCalories, suggestedProtein, weight);
+  const thisWeek = macroTargets(thisWeekCalories, protein, weight);
+  const goalTargets = macroTargets(goalCalories, protein, weight);
 
   const shouldChange =
     !current ||
-    Math.abs(current.calories - suggested.calories) >= 50 ||
-    current.proteinG !== suggested.proteinG;
+    Math.abs(current.calories - thisWeek.calories) >= 50 ||
+    current.proteinG !== thisWeek.proteinG;
 
   return {
     status,
     title,
     detail: explain(status, goal, rate, target),
     targetRateKgPerWeek: target,
+    measuredMaintenanceCalories: Math.round(measured),
     maintenanceCalories: Math.round(maintenance),
+    blendWeight,
     current,
-    suggested,
+    suggested: thisWeek,
+    goal: goalTargets,
+    weeksToGoal: goalCalories === thisWeekCalories ? 1 : weeksToGoal,
     shouldChange,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Starting targets, before there is a trend
+// ---------------------------------------------------------------------------
+
+export interface StartingTargets {
+  maintenanceCalories: number;
+  targetRateKgPerWeek: number;
+  targets: MacroTargets;
+}
+
+/** Formula-only targets for a new user: maintenance ± the planned rate. */
+export function startingTargets(
+  formulaMaintenance: number,
+  weightKg: number,
+  goals: Goals | undefined,
+): StartingTargets {
+  const goal = goals?.goal ?? 'maintain';
+  const target = goals?.targetRateKgPerWeek ?? DEFAULT_TARGET_RATE[goal];
+  const calories = round25(formulaMaintenance + (target * KCAL_PER_KG) / 7);
+  return {
+    maintenanceCalories: formulaMaintenance,
+    targetRateKgPerWeek: target,
+    targets: macroTargets(calories, proteinFor(weightKg, goals?.targetProteinG), weightKg),
   };
 }
 
@@ -144,7 +218,7 @@ export function onTrackVerdict(trend: ComputedTrend, goals: Goals | undefined): 
 // ---------------------------------------------------------------------------
 
 export interface Insight {
-  id: 'logging' | 'intake' | 'protein' | 'lean-loss' | 'fat-loss' | 'recomp';
+  id: 'intake' | 'protein' | 'carbs' | 'lean-loss' | 'fat-loss' | 'recomp';
   tone: 'good' | 'warn' | 'info';
   text: string;
 }
@@ -168,17 +242,6 @@ export function bodyInsights(
     .filter((m) => m.date >= trend.fromDate && m.date <= trend.toDate)
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  // 1. Logging quality: averages are shaky below ~4 logged days a week.
-  const windowDays = trend.days + 1;
-  const perWeek = (trend.daysWithFoodLogs / windowDays) * 7;
-  if (perWeek < 4) {
-    insights.push({
-      id: 'logging',
-      tone: 'warn',
-      text: `You logged food on ${trend.daysWithFoodLogs} of ${windowDays} days (about ${perWeek.toFixed(1)} a week). Below about 4 a week the averages, and these suggestions, are unreliable.`,
-    });
-  }
-
   // 2. Hitting the calorie target.
   if (verdict.current) {
     const gap = trend.avgDailyCalories - verdict.current.calories;
@@ -198,6 +261,15 @@ export function bodyInsights(
       id: 'protein',
       tone: 'warn',
       text: `Protein is low: ${trend.avgDailyProteinG} g a day against ${proteinTarget} g. Raise it to protect muscle, especially in a deficit.`,
+    });
+  }
+
+  // BCT's carb check: protein and fat floors can crowd carbs out at low calories.
+  if (verdict.suggested.carbsG < 50) {
+    insights.push({
+      id: 'carbs',
+      tone: 'warn',
+      text: `Your protein and fat targets leave little room for carbs (~${verdict.suggested.carbsG} g). Fine short-term, but low carbs can flatten training. Consider a small calorie increase or less fat.`,
     });
   }
 
@@ -245,4 +317,91 @@ export function bodyInsights(
   }
 
   return insights;
+}
+
+// ---------------------------------------------------------------------------
+// Logging reliability
+// ---------------------------------------------------------------------------
+
+export type Reliability = 'high' | 'medium' | 'low';
+
+export interface LoggingReliability {
+  level: Reliability;
+  /**
+   * Measured maintenance is so far under the formula that food is very likely
+   * going unlogged. New targets built on those logs would be wrong, so the card
+   * holds them back until logging is fixed.
+   */
+  underLogging: boolean;
+  /** ± kcal to show around the goal, wider as the logs get less trustworthy. */
+  rangeKcal: number;
+  reasons: string[];
+}
+
+const RANGE_KCAL: Record<Reliability, number> = { high: 100, medium: 200, low: 350 };
+/** Measured maintenance this far under the formula points to under-logging. */
+const UNDER_LOGGING_RATIO = 0.75;
+
+/**
+ * How far the logs can be trusted.
+ *
+ * Under-logging by the same amount every day cancels out — maintenance is worked
+ * out from logged intake, so the target comes out in the same "logged calories".
+ * What does not cancel is logging that varies, and that leaves traces: partial
+ * days, gaps that fall on the weekend, and a measured maintenance far below what
+ * any formula would give. None of them is proof; each lowers confidence.
+ */
+export function loggingReliability(
+  trend: ComputedTrend,
+  formulaMaintenance: number | undefined,
+  measuredMaintenance: number,
+): LoggingReliability {
+  const reasons: string[] = [];
+  let severe = false;
+
+  const windowDays = trend.days + 1;
+  const perWeek = (trend.daysWithFoodLogs / windowDays) * 7;
+  if (perWeek < 4) {
+    reasons.push(
+      `Food logged on ${trend.daysWithFoodLogs} of ${windowDays} days (about ${perWeek.toFixed(1)} a week). Below about 4 a week the averages are shaky.`,
+    );
+  }
+
+  if (trend.partialDays.length >= 2) {
+    reasons.push(
+      `${trend.partialDays.length} days look only partly logged (under 60% of your usual intake), so they were left out of the average.`,
+    );
+  }
+
+  // Gaps on Friday and Saturday, the Saudi weekend, are usually the big days.
+  const logged = new Set(trend.dailyCalories.map((d) => d.date));
+  const missing: number[] = [];
+  for (
+    let t = Date.parse(`${trend.fromDate}T00:00:00Z`);
+    t <= Date.parse(`${trend.toDate}T00:00:00Z`);
+    t += 86_400_000
+  ) {
+    const date = new Date(t).toISOString().slice(0, 10);
+    if (!logged.has(date)) missing.push(new Date(t).getUTCDay());
+  }
+  const weekendMissing = missing.filter((d) => d === 5 || d === 6).length;
+  if (missing.length >= 3 && weekendMissing / missing.length >= 0.6) {
+    reasons.push(
+      `${weekendMissing} of your ${missing.length} unlogged days are Fridays or Saturdays. Weekends tend to be the bigger days, so your real average is probably higher than logged.`,
+    );
+  }
+
+  if (
+    formulaMaintenance !== undefined &&
+    measuredMaintenance < formulaMaintenance * UNDER_LOGGING_RATIO
+  ) {
+    severe = true;
+    reasons.push(
+      `Your measured maintenance (${measuredMaintenance} kcal) is ${Math.round((1 - measuredMaintenance / formulaMaintenance) * 100)}% below the formula's ${formulaMaintenance} kcal. Formulas are rough, but a gap this size usually means food is going unlogged: oil, drinks, snacks, bites.`,
+    );
+  }
+
+  const level: Reliability =
+    severe || reasons.length >= 2 ? 'low' : reasons.length === 1 ? 'medium' : 'high';
+  return { level, underLogging: severe, rangeKcal: RANGE_KCAL[level], reasons };
 }

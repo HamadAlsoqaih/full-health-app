@@ -1,17 +1,29 @@
 /**
- * "Are you on track?" — the verdict, and the targets to change to if not.
+ * "Are you on track?" — the verdict, this week's targets, and where they lead.
  *
- * Shows current and suggested targets side by side so the change is visible, and
- * lets the user adopt the suggestion in one tap. Nothing changes until they do.
+ * Shows the saved target, what is actually eaten and this week's step side by
+ * side, with the goal the weekly steps are heading for underneath. Nothing
+ * changes until the user adopts the suggestion.
  */
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { AuthUser, BodyMeasurement, ComputedTrend, Goals } from '@app/shared-types';
 import { Button, Card } from '@/shared/components/Field';
-import { useToast } from '@/shared/components/Toast';
-import { useApi } from '@/shared/lib/ApiProvider';
-import { queryKeys } from '@/shared/lib/queryClient';
-import { authApi } from '@/features/auth/api';
-import { bodyInsights, onTrackVerdict, type Insight, type OnTrackStatus } from '../lib/onTrack';
+import { formulaMaintenance } from '@/shared/lib/maintenanceFormula';
+import {
+  bodyInsights,
+  loggingReliability,
+  onTrackVerdict,
+  type Insight,
+  type OnTrackStatus,
+  type Reliability,
+} from '../lib/onTrack';
+import { useApplyTargets } from '../hooks/useApplyTargets';
+
+const BADGE: Record<OnTrackStatus, string> = {
+  'on-track': 'border-success text-success',
+  'too-fast': 'border-warning text-warning',
+  'too-slow': 'border-warning text-warning',
+  'wrong-way': 'border-danger text-danger',
+};
 
 const INSIGHT_TONE: Record<Insight['tone'], string> = {
   good: 'border-success text-text',
@@ -19,11 +31,10 @@ const INSIGHT_TONE: Record<Insight['tone'], string> = {
   info: 'border-border text-text',
 };
 
-const BADGE: Record<OnTrackStatus, string> = {
-  'on-track': 'border-success text-success',
-  'too-fast': 'border-warning text-warning',
-  'too-slow': 'border-warning text-warning',
-  'wrong-way': 'border-danger text-danger',
+const RELIABILITY: Record<Reliability, { label: string; className: string }> = {
+  high: { label: 'High', className: 'text-success' },
+  medium: { label: 'Medium', className: 'text-warning' },
+  low: { label: 'Low', className: 'text-danger' },
 };
 
 const ROWS = [
@@ -35,36 +46,31 @@ const ROWS = [
 
 export function OnTrackCard({
   trend,
-  goals,
+  user,
   measurements,
 }: {
   trend: ComputedTrend;
-  goals: Goals | undefined;
+  user: AuthUser | undefined;
   measurements: BodyMeasurement[];
 }) {
-  const { client } = useApi();
-  const queryClient = useQueryClient();
-  const toast = useToast();
-  const verdict = onTrackVerdict(trend, goals);
-  const insights = bodyInsights(trend, measurements, verdict);
+  const goals: Goals | undefined = user?.goals;
+  const formula = user?.body ? formulaMaintenance(user.body, trend.endWeightKg) : undefined;
+  const verdict = onTrackVerdict(
+    trend,
+    goals,
+    formula !== undefined ? { formulaMaintenance: formula } : {},
+  );
+  const reliability = loggingReliability(trend, formula, verdict.measuredMaintenanceCalories);
+  // Targets built on logs that are missing food would be wrong; hold them.
+  const hold = reliability.underLogging;
+  const insights = hold ? [] : bodyInsights(trend, measurements, verdict);
+  const thisWeek = hold && verdict.current ? verdict.current : verdict.suggested;
+  const apply = useApplyTargets(goals);
 
-  const apply = useMutation({
-    mutationFn: () =>
-      authApi(client).updateMe({
-        goals: {
-          goal: goals?.goal ?? 'maintain',
-          ...goals,
-          targetCalories: verdict.suggested.calories,
-          targetProteinG: verdict.suggested.proteinG,
-        },
-      }),
-    onSuccess: (user: AuthUser) => {
-      queryClient.setQueryData(queryKeys.me, user);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.overview });
-      toast.show('Targets updated.', 'success');
-    },
-    onError: () => toast.show('Could not update your targets.', 'error'),
-  });
+  const source =
+    formula === undefined || verdict.blendWeight >= 1
+      ? `measured from your last ${trend.days} days`
+      : `${Math.round(verdict.blendWeight * 100)}% measured and ${Math.round((1 - verdict.blendWeight) * 100)}% formula, since your trend is only ${trend.days} days old`;
 
   return (
     <Card>
@@ -79,9 +85,11 @@ export function OnTrackCard({
         </div>
 
         <p className="text-sm text-text">
-          {insights.some((i) => i.id === 'recomp')
-            ? "Your weight is flat, but your waist says you're losing fat, so this is working. If you also want the scale to move, the suggestion below gets you to your planned rate."
-            : verdict.detail}
+          {hold
+            ? `Your weight is changing at ${trend.ratePerWeekKg} kg/week against a plan of ${verdict.targetRateKgPerWeek}. But your logs are missing food, so what you log isn't what you eat: keep your current target instead of eating to your logs.`
+            : insights.some((i) => i.id === 'recomp')
+              ? "Your weight is flat, but your waist says you're losing fat, so this is working. If you also want the scale to move, the suggestion below gets you to your planned rate."
+              : verdict.detail}
         </p>
 
         <table className="w-full text-sm">
@@ -90,19 +98,19 @@ export function OnTrackCard({
               <th className="py-1 text-left font-normal">Daily</th>
               <th className="py-1 text-right font-normal">Target</th>
               <th className="py-1 text-right font-normal">You eat</th>
-              <th className="py-1 text-right font-normal">Suggested</th>
+              <th className="py-1 text-right font-normal">{hold ? 'Keep' : 'This week'}</th>
             </tr>
           </thead>
           <tbody>
             {ROWS.map(([label, key, unit]) => {
               const now = verdict.current?.[key];
+              const next = thisWeek[key];
               const eaten =
                 key === 'calories'
                   ? trend.avgDailyCalories
                   : key === 'proteinG'
                     ? trend.avgDailyProteinG
                     : undefined;
-              const next = verdict.suggested[key];
               const changed =
                 now === undefined || Math.abs(now - next) >= (key === 'calories' ? 50 : 1);
               return (
@@ -125,6 +133,24 @@ export function OnTrackCard({
           </tbody>
         </table>
 
+        {hold ? (
+          <p className="rounded-lg border border-warning p-3 text-sm text-text">
+            <span className="font-medium">Fix logging before changing targets.</span> Your logs
+            don't add up (see below), so new targets would be built on food that isn't there. For
+            the next two weeks log everything, including oil, drinks, sauces and bites, then check
+            back.
+          </p>
+        ) : verdict.status !== 'on-track' ? (
+          <p className="rounded-lg bg-surface-raised p-3 text-sm text-text">
+            <span className="font-medium">
+              Goal: {verdict.goal.calories} ± {reliability.rangeKcal} kcal a day
+            </span>
+            {verdict.weeksToGoal > 1
+              ? `, reached in ${verdict.weeksToGoal} weekly steps of up to 500 kcal. Each step starts from what you actually eat (${trend.avgDailyCalories} kcal), not your saved target, because a big overnight change is hard to stick with.`
+              : ', reached this week.'}
+          </p>
+        ) : null}
+
         {insights.length > 0 ? (
           <ul className="flex flex-col gap-2">
             {insights.map((insight) => (
@@ -138,17 +164,44 @@ export function OnTrackCard({
           </ul>
         ) : null}
 
+        <div className="flex flex-col gap-1 rounded-lg border border-border p-3">
+          <p className="text-sm text-text">
+            Logging reliability:{' '}
+            <span className={`font-medium ${RELIABILITY[reliability.level].className}`}>
+              {RELIABILITY[reliability.level].label}
+            </span>
+          </p>
+          {reliability.reasons.length > 0 ? (
+            <ul className="flex flex-col gap-1 text-xs text-text-muted">
+              {reliability.reasons.map((reason) => (
+                <li key={reason}>· {reason}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-text-muted">
+              {formula !== undefined
+                ? 'No partial days, no weekend gaps, and your numbers line up with the formula.'
+                : 'No partial days and no weekend gaps.'}
+            </p>
+          )}
+        </div>
+
         <p className="text-xs text-text-muted">
-          {verdict.status === 'on-track'
-            ? 'Suggested calories are what you already eat, since that is producing your planned rate.'
-            : `Suggested calories are your maintenance (${verdict.maintenanceCalories} kcal = ${trend.avgDailyCalories} eaten ${trend.ratePerWeekKg <= 0 ? '+' : '−'} ${Math.abs(trend.ratePerWeekKg)} kg/week ${trend.ratePerWeekKg <= 0 ? 'lost' : 'gained'} × 7700 ÷ 7) adjusted for your planned ${verdict.targetRateKgPerWeek} kg/week.`}{' '}
-          Protein is 1.6–2.2 g per kg of body weight (1.8 if your target is outside that); fat is at
-          least 0.8 g/kg and carbs fill the rest. "You eat" is your average on logged days.
+          Maintenance is {verdict.maintenanceCalories} kcal, {source}. Measured ={' '}
+          {trend.avgDailyCalories} eaten {trend.ratePerWeekKg <= 0 ? '+' : '−'}{' '}
+          {Math.abs(trend.ratePerWeekKg)} kg/week {trend.ratePerWeekKg <= 0 ? 'lost' : 'gained'} ×
+          7700 ÷ 7 = {verdict.measuredMaintenanceCalories} kcal
+          {formula !== undefined ? `; formula = ${formula} kcal` : ''}.
+          {trend.earlyDaysSkippedUntil
+            ? ' Your first two weeks of dieting are left out, because early loss is mostly water.'
+            : ''}{' '}
+          Protein is 1.6–2.2 g/kg (1.8 if your target is outside that); fat is at least 0.8 g/kg and
+          carbs fill the rest.
         </p>
 
-        {verdict.shouldChange ? (
-          <Button loading={apply.isPending} onClick={() => apply.mutate()}>
-            Use suggested targets
+        {hold ? null : verdict.shouldChange ? (
+          <Button loading={apply.isPending} onClick={() => apply.mutate(verdict.suggested)}>
+            Use this week's targets
           </Button>
         ) : (
           <p className="text-sm font-medium text-success">

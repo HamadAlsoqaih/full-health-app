@@ -24,6 +24,30 @@ const ACTION_LABEL: Record<string, string> = {
 function Recommendation({ trend, units }: { trend: TrendResult; units: UnitSystem }) {
   if (trend.status !== 'ok') {
     const needed = trend.daysNeeded;
+    if (trend.earlyDaysSkippedUntil) {
+      const fmt = (iso: string) =>
+        new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, {
+          day: 'numeric',
+          month: 'short',
+        });
+      const firstTrend = new Date(
+        Date.parse(`${trend.earlyDaysSkippedUntil}T00:00:00Z`) + 14 * 86_400_000,
+      )
+        .toISOString()
+        .slice(0, 10);
+      return (
+        <div className="flex flex-col gap-2">
+          <p className="font-medium text-text">
+            Measuring starts {fmt(trend.earlyDaysSkippedUntil)}
+          </p>
+          <p className="text-sm text-text-muted">
+            The first two weeks of a diet are skipped: the early drop is mostly water and stored
+            carbohydrate, not fat. Keep logging, and your measured trend appears around{' '}
+            {fmt(firstTrend)}. Until then, use the starting targets below.
+          </p>
+        </div>
+      );
+    }
     return (
       <div className="flex flex-col gap-2">
         <p className="font-medium text-text">Not enough data yet</p>
@@ -46,21 +70,16 @@ function Recommendation({ trend, units }: { trend: TrendResult; units: UnitSyste
   }
 
   const { recommendation } = trend;
-  const delta = recommendation.calorieDeltaPerDay;
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1">
         <p className="text-lg font-semibold text-text">
           {ACTION_LABEL[recommendation.action] ?? 'Keep going'}
-          {delta !== 0 ? (
-            <span className="font-normal text-text-muted">
-              {' '}
-              — about {Math.abs(delta)} kcal/day {delta > 0 ? 'more' : 'less'}
-            </span>
-          ) : null}
         </p>
-        <p className="text-sm text-text-muted">{recommendation.rationale}</p>
+        <p className="text-sm text-text-muted">
+          Your exact targets for this week are in "Are you on track?" below.
+        </p>
       </div>
 
       <dl className="grid grid-cols-2 gap-3 rounded-lg bg-surface-raised p-3">
@@ -68,7 +87,7 @@ function Recommendation({ trend, units }: { trend: TrendResult; units: UnitSyste
           ['Change', formatWeightChange(trend.weightChangeKg, units)],
           ['Per week', formatWeightChange(trend.ratePerWeekKg, units)],
           ['Avg intake', `${trend.avgDailyCalories} kcal`],
-          ['Est. maintenance', `${trend.estimatedMaintenanceCalories} kcal`],
+          ['Measured maintenance', `${trend.estimatedMaintenanceCalories} kcal`],
         ].map(([label, value]) => (
           <div key={label} className="flex flex-col">
             <dt className="text-xs text-text-muted">{label}</dt>
@@ -76,12 +95,6 @@ function Recommendation({ trend, units }: { trend: TrendResult; units: UnitSyste
           </div>
         ))}
       </dl>
-
-      {recommendation.proteinTargetG ? (
-        <p className="text-sm text-text-muted">
-          Aim for around {recommendation.proteinTargetG} g of protein a day.
-        </p>
-      ) : null}
 
       <details className="rounded-lg border border-border p-3 text-sm">
         <summary className="cursor-pointer font-medium text-text">What these numbers mean</summary>
@@ -105,7 +118,7 @@ function Recommendation({ trend, units }: { trend: TrendResult; units: UnitSyste
             </dd>
           </div>
           <div>
-            <dt className="font-medium text-text">Est. maintenance</dt>
+            <dt className="font-medium text-text">Measured maintenance</dt>
             <dd>
               Roughly what you could eat to hold your weight, worked out from your intake and how
               your weight moved (about 7,700 kcal per kg). It is only as accurate as your logging.

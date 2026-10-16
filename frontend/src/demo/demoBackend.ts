@@ -246,14 +246,27 @@ function food(
 export const DEMO_SCENARIOS = [
   // leanShare: fraction of the weight change that is lean mass rather than fat.
   // waistCmPerWeek: lets the recomposition case shrink at the waist while the
-  // scale stays flat.
-  { id: 'on-track', label: 'On track', ratePerWeekKg: -0.5, leanShare: 0.15, waistCmPerWeek: -0.6 },
+  // scale stays flat. dietStartDaysAgo: when the goal was set; the trend skips
+  // the two weeks after it. waterKg: glycogen and water lost in the first week.
+  {
+    id: 'on-track',
+    label: 'On track',
+    ratePerWeekKg: -0.5,
+    leanShare: 0.15,
+    waistCmPerWeek: -0.6,
+    dietStartDaysAgo: 120,
+    waterKg: 0,
+    logging: 'complete',
+  },
   {
     id: 'too-slow',
     label: 'Losing too slowly',
     ratePerWeekKg: -0.2,
     leanShare: 0.1,
     waistCmPerWeek: -0.25,
+    dietStartDaysAgo: 120,
+    waterKg: 0,
+    logging: 'complete',
   },
   {
     id: 'too-fast',
@@ -261,15 +274,69 @@ export const DEMO_SCENARIOS = [
     ratePerWeekKg: -1.1,
     leanShare: 0.45,
     waistCmPerWeek: -0.9,
+    dietStartDaysAgo: 120,
+    waterKg: 0,
+    logging: 'complete',
   },
-  { id: 'stalled', label: 'Weight stalled', ratePerWeekKg: 0, leanShare: 0, waistCmPerWeek: 0 },
-  { id: 'recomp', label: 'Recomposition', ratePerWeekKg: 0, leanShare: 0, waistCmPerWeek: -0.5 },
+  {
+    id: 'stalled',
+    label: 'Weight stalled',
+    ratePerWeekKg: 0,
+    leanShare: 0,
+    waistCmPerWeek: 0,
+    dietStartDaysAgo: 120,
+    waterKg: 0,
+    logging: 'complete',
+  },
+  {
+    id: 'recomp',
+    label: 'Recomposition',
+    ratePerWeekKg: 0,
+    leanShare: 0,
+    waistCmPerWeek: -0.5,
+    dietStartDaysAgo: 120,
+    waterKg: 0,
+    logging: 'complete',
+  },
   {
     id: 'gaining',
     label: 'Gaining on a cut',
     ratePerWeekKg: 0.35,
     leanShare: 0.3,
     waistCmPerWeek: 0.3,
+    dietStartDaysAgo: 120,
+    waterKg: 0,
+    logging: 'complete',
+  },
+  {
+    id: 'new-user',
+    label: 'New user, day 3',
+    ratePerWeekKg: -0.5,
+    leanShare: 0.15,
+    waistCmPerWeek: 0,
+    dietStartDaysAgo: 3,
+    waterKg: 1.8,
+    logging: 'complete',
+  },
+  {
+    id: 'water-drop',
+    label: 'Water drop, first month',
+    ratePerWeekKg: -0.5,
+    leanShare: 0.15,
+    waistCmPerWeek: -0.6,
+    dietStartDaysAgo: 30,
+    waterKg: 1.8,
+    logging: 'complete',
+  },
+  {
+    id: 'inconsistent',
+    label: 'Inconsistent logging',
+    ratePerWeekKg: -0.5,
+    leanShare: 0.15,
+    waistCmPerWeek: -0.6,
+    dietStartDaysAgo: 120,
+    waterKg: 0,
+    logging: 'inconsistent',
   },
 ] as const;
 
@@ -355,8 +422,18 @@ function seed(scenario: DemoScenario = 'on-track'): DemoState {
       ai: { enabled: true, photoScanEnabled: true, evaluationEnabled: true },
     },
     onboarding: { goalsSubmitted: true, startingStatsSubmitted: true, complete: true },
-    createdAt: daysAgo(35).toISOString(),
+    createdAt: daysAgo(story.dietStartDaysAgo, 9).toISOString(),
+    // 30-year-old man, 178 cm, lightly active: Mifflin-St Jeor puts maintenance
+    // near the 2,500 kcal the sample data is built around.
+    body: {
+      heightCm: 178,
+      birthYear: new Date().getFullYear() - 30,
+      sex: 'male',
+      activityLevel: 'light',
+    },
   };
+  // Days of history: a month, or less for someone who only just started.
+  const history = Math.min(30, story.dietStartDaysAgo);
 
   const ex = (id: string) => EXERCISES.find((e) => e.id === id)!;
   const planned = (id: string, sets: number, targetReps: number, targetWeightKg?: number) => ({
@@ -410,7 +487,7 @@ function seed(scenario: DemoScenario = 'on-track'): DemoState {
 
   // Push / pull / legs, every other day for the last four weeks.
   const workoutLogs: WorkoutLog[] = [];
-  for (let i = 0, day = 27; day >= 1; i++, day -= 2) {
+  for (let i = 0, day = Math.min(27, history - 1); day >= 1; i++, day -= 2) {
     const routine = routines[i % routines.length]!;
     const completed = daysAgo(day, 19).toISOString();
     const progress = Math.floor(i / 3) * 2.5;
@@ -436,15 +513,19 @@ function seed(scenario: DemoScenario = 'on-track'): DemoState {
 
   // Weigh-ins every few days from 86 kg, moving at the scenario's rate.
   const measurements: BodyMeasurement[] = [];
-  for (let day = 30; day >= 0; day -= 3) {
+  // Share of the first-week water loss already gone, `day` days ago.
+  const waterGone = (day: number) => Math.min(1, Math.max(0, story.dietStartDaysAgo - day) / 7);
+  for (let day = history; day >= 0; day -= 3) {
     const date = toLocalDateIso(daysAgo(day));
     const wobble = [0.2, -0.1, 0.3, 0, -0.2][day % 5]!;
-    const weeks = (30 - day) / 7;
-    const trendWeight = 86 + weeks * story.ratePerWeekKg;
+    const weeks = (history - day) / 7;
+    const water = story.waterKg * (waterGone(day) - waterGone(history));
+    const trendWeight = 86 + weeks * story.ratePerWeekKg - water;
     const weightKg = round(trendWeight + wobble);
     // Fat mass moves by the non-lean share of the trend; the day's wobble is water.
     const recompFatKg = story.id === 'recomp' ? -0.35 * weeks : 0;
-    const fatKg = 86 * 0.21 + (1 - story.leanShare) * (trendWeight - 86) + recompFatKg;
+    // Water is lean mass, so it comes off without touching fat.
+    const fatKg = 86 * 0.21 + (1 - story.leanShare) * (trendWeight + water - 86) + recompFatKg;
     measurements.push({
       id: uuid(),
       clientId: uuid(),
@@ -458,22 +539,36 @@ function seed(scenario: DemoScenario = 'on-track'): DemoState {
     });
   }
 
-  // A full day of eating for each of the last 30 days, plus today so far.
+  // A full day of eating for each day of history, plus today so far. The
+  // inconsistent logger skips Fridays and Saturdays, logs only breakfast every
+  // fifth day, and leaves about a third of what they eat unlogged.
   const byId = (id: string) => FOODS.find((f) => f.id === id)!;
   const foodLog: FoodLogEntry[] = [];
-  for (let day = 30; day >= 1; day--) {
+  const sloppy = story.logging === 'inconsistent';
+  const p = (n: number) =>
+    sloppy ? Math.max(0.25, Math.round(portion(n) * 0.65 * 4) / 4) : portion(n);
+  for (let day = history; day >= 1; day--) {
     const date = toLocalDateIso(daysAgo(day));
+    const weekday = daysAgo(day).getDay();
+    if (sloppy && (weekday === 5 || weekday === 6)) continue;
+    if (sloppy && day % 5 === 0) {
+      foodLog.push(
+        makeLogEntry(byId('usda:oats'), date, p(1.5), 'breakfast'),
+        makeLogEntry(byId('off:whey'), date, p(1), 'breakfast'),
+      );
+      continue;
+    }
     foodLog.push(
-      makeLogEntry(byId('usda:oats'), date, portion(1.5), 'breakfast'),
-      makeLogEntry(byId('off:whey'), date, portion(1), 'breakfast'),
-      makeLogEntry(byId('usda:banana'), date, portion(1), 'breakfast'),
-      makeLogEntry(byId('usda:chicken-breast'), date, portion(2), 'lunch'),
-      makeLogEntry(byId('usda:white-rice'), date, portion(1.5), 'lunch'),
-      makeLogEntry(byId('usda:broccoli'), date, portion(1), 'lunch'),
-      makeLogEntry(byId(day % 2 ? 'usda:salmon' : 'usda:beef-mince'), date, portion(2), 'dinner'),
-      makeLogEntry(byId('usda:sweet-potato'), date, portion(1), 'dinner'),
-      makeLogEntry(byId('off:greek-yogurt'), date, portion(1), 'snack'),
-      makeLogEntry(byId('usda:dates'), date, portion(2), 'snack'),
+      makeLogEntry(byId('usda:oats'), date, p(1.5), 'breakfast'),
+      makeLogEntry(byId('off:whey'), date, p(1), 'breakfast'),
+      makeLogEntry(byId('usda:banana'), date, p(1), 'breakfast'),
+      makeLogEntry(byId('usda:chicken-breast'), date, p(2), 'lunch'),
+      makeLogEntry(byId('usda:white-rice'), date, p(1.5), 'lunch'),
+      makeLogEntry(byId('usda:broccoli'), date, p(1), 'lunch'),
+      makeLogEntry(byId(day % 2 ? 'usda:salmon' : 'usda:beef-mince'), date, p(2), 'dinner'),
+      makeLogEntry(byId('usda:sweet-potato'), date, p(1), 'dinner'),
+      makeLogEntry(byId('off:greek-yogurt'), date, p(1), 'snack'),
+      makeLogEntry(byId('usda:dates'), date, p(2), 'snack'),
     );
   }
   const today = toLocalDateIso(new Date());
@@ -576,6 +671,7 @@ function computeTrend(state: DemoState, days: number): TrendResult {
     ...(state.user.goals ? { goals: state.user.goals } : {}),
     now: new Date(),
     windowDays: days,
+    dietStartDate: toLocalDateIso(new Date(state.user.createdAt)),
   });
 }
 
@@ -590,7 +686,7 @@ function evaluation(state: DemoState): BodyCompEvaluation {
     summary:
       `Over the last ${trend.days} days you went from ${trend.startWeightKg} kg to ${trend.endWeightKg} kg, ` +
       `about ${Math.abs(trend.ratePerWeekKg)} kg per week. With an average of ${trend.avgDailyCalories} kcal a day, ` +
-      `your maintenance looks to be around ${trend.estimatedMaintenanceCalories} kcal. ${trend.recommendation.rationale}`,
+      `your maintenance looks to be around ${trend.estimatedMaintenanceCalories} kcal.`,
     createdAt: new Date().toISOString(),
     completedAt: new Date().toISOString(),
   };
@@ -716,6 +812,7 @@ function handle(method: string, url: URL, body: unknown, init?: RequestInit): un
       ...(patch.displayName !== undefined ? { displayName: patch.displayName } : {}),
       ...(patch.units ? { units: patch.units } : {}),
       ...(patch.goals ? { goals: patch.goals } : {}),
+      ...(patch.body ? { body: patch.body } : {}),
       preferences: {
         notifications: {
           ...state.user.preferences.notifications,

@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { BodyMeasurement, ComputedTrend, Goals } from '@app/shared-types';
 import { macroTargets } from '@/shared/lib/macroTargets';
-import { bodyInsights, onTrackVerdict } from '@/features/body-composition/lib/onTrack';
+import {
+  bodyInsights,
+  loggingReliability,
+  onTrackVerdict,
+  startingTargets,
+} from '@/features/body-composition/lib/onTrack';
+import { formulaMaintenance } from '@/shared/lib/maintenanceFormula';
 
 const cut: Goals = {
   goal: 'cut',
@@ -9,6 +15,20 @@ const cut: Goals = {
   targetProteinG: 170,
   targetRateKgPerWeek: -0.5,
 };
+
+/** One logged day per date from 16 Sep to 16 Oct 2026. */
+function everyDay(calories: number, skip: (date: Date) => boolean = () => false) {
+  const out: Array<{ date: string; calories: number }> = [];
+  for (
+    let t = Date.parse('2026-09-16T00:00:00Z');
+    t <= Date.parse('2026-10-16T00:00:00Z');
+    t += 86_400_000
+  ) {
+    const d = new Date(t);
+    if (!skip(d)) out.push({ date: d.toISOString().slice(0, 10), calories });
+  }
+  return out;
+}
 
 function trend(ratePerWeekKg: number, avgDailyCalories = 2000): ComputedTrend {
   return {
@@ -23,8 +43,11 @@ function trend(ratePerWeekKg: number, avgDailyCalories = 2000): ComputedTrend {
     direction: ratePerWeekKg < 0 ? 'losing' : 'gaining',
     avgDailyCalories,
     avgDailyProteinG: 150,
-    daysWithFoodLogs: 14,
-    estimatedMaintenanceCalories: 2500,
+    daysWithFoodLogs: 31,
+    // What the server computes: intake − fitted rate × 7700 / 7.
+    estimatedMaintenanceCalories: Math.round(avgDailyCalories - (ratePerWeekKg * 7700) / 7),
+    dailyCalories: everyDay(avgDailyCalories),
+    partialDays: [],
     recommendation: {
       action: 'hold-calories',
       secondaryActions: [],
@@ -60,8 +83,11 @@ describe('onTrackVerdict', () => {
   it('suggests eating more when losing too fast', () => {
     const v = onTrackVerdict(trend(-1.1, 1300), cut);
     expect(v.status).toBe('too-fast');
-    // Maintenance 2500 − 550 for −0.5 kg/week.
-    expect(v.suggested.calories).toBe(1950);
+    // Goal: maintenance 1300 + 1.1 × 1100 = 2510, minus 550.
+    expect(v.goal.calories).toBe(1950);
+    // This week: at most 500 above the 1300 eaten now.
+    expect(v.suggested.calories).toBe(1800);
+    expect(v.weeksToGoal).toBe(2);
   });
 
   it('suggests eating less when losing too slowly', () => {
@@ -73,8 +99,10 @@ describe('onTrackVerdict', () => {
   it('never suggests more than the target when gaining on a cut', () => {
     const v = onTrackVerdict(trend(0.35, 2800), cut);
     // Maintenance 2800 − 0.35 × 1100 = 2415, minus 550.
-    expect(v.suggested.calories).toBeLessThan(cut.targetCalories!);
-    expect(v.suggested.calories).toBe(1875);
+    expect(v.goal.calories).toBeLessThan(cut.targetCalories!);
+    expect(v.goal.calories).toBe(1875);
+    expect(v.suggested.calories).toBe(2300);
+    expect(v.weeksToGoal).toBe(2);
   });
 
   it('flags a stall and a gain on a cut as going the wrong way', () => {
@@ -127,9 +155,61 @@ describe('bodyInsights', () => {
     ]);
     expect(out.some((t) => t.includes('recomposition'))).toBe(true);
   });
+});
+
+describe('maintenance blend and starting targets', () => {
+  it('leans on the formula while the trend is young', () => {
+    // A 14-day trend counts half: (2510 + 2000) / 2.
+    const young = { ...trend(-1.1, 1300), days: 14 };
+    const v = onTrackVerdict(young, cut, { formulaMaintenance: 2000 });
+    expect(v.blendWeight).toBe(0.5);
+    expect(v.maintenanceCalories).toBe(2255);
+  });
+
+  it('ignores the formula once the trend is four weeks old', () => {
+    const v = onTrackVerdict(trend(-1.1, 1300), cut, { formulaMaintenance: 2000 });
+    expect(v.maintenanceCalories).toBe(v.measuredMaintenanceCalories);
+  });
+
+  it('computes Mifflin-St Jeor × activity for a new user', () => {
+    const body = {
+      heightCm: 178,
+      birthYear: 1996,
+      sex: 'male' as const,
+      activityLevel: 'light' as const,
+    };
+    // 10×86 + 6.25×178 − 5×30 + 5 = 1827.5, × 1.375 = 2512.8.
+    expect(formulaMaintenance(body, 86, new Date('2026-10-16'))).toBe(2513);
+    expect(startingTargets(2513, 86, cut).targets.calories).toBe(1975);
+  });
+});
+
+describe('loggingReliability', () => {
+  it('is high for complete, plausible logs', () => {
+    const t = trend(-0.5, 1950);
+    expect(loggingReliability(t, 2500, 2500).level).toBe('high');
+  });
+
+  it('notices gaps that fall on Fridays and Saturdays', () => {
+    const weekendGaps = everyDay(1950, (d) => d.getUTCDay() === 5 || d.getUTCDay() === 6);
+    const t = {
+      ...trend(-0.5, 1950),
+      dailyCalories: weekendGaps,
+      daysWithFoodLogs: weekendGaps.length,
+    };
+    const r = loggingReliability(t, 2500, 2500);
+    expect(r.reasons.some((x) => x.includes('Fridays or Saturdays'))).toBe(true);
+  });
+
+  it('flags likely under-logging and widens the range', () => {
+    const r = loggingReliability(trend(-0.5, 1300), 2500, 1850);
+    expect(r.level).toBe('low');
+    expect(r.rangeKcal).toBe(350);
+  });
 
   it('warns when food was logged on fewer than ~4 days a week', () => {
     const sparse = { ...trend(-0.5), daysWithFoodLogs: 10 };
-    expect(texts(sparse, []).some((t) => t.includes('unreliable'))).toBe(true);
+    const r = loggingReliability(sparse, undefined, 2500);
+    expect(r.reasons.some((x) => x.includes('shaky'))).toBe(true);
   });
 });

@@ -68,6 +68,8 @@ export async function getTrend(
     now,
     windowDays: days,
     ...(user?.goals ? { goals: user.goals as never } : {}),
+    // Onboarding sets the first goal, so account creation is when the diet began.
+    ...(user?.createdAt ? { dietStartDate: user.createdAt.slice(0, 10) } : {}),
   });
 }
 

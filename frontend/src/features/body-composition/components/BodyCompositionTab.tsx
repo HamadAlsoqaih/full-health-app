@@ -12,6 +12,7 @@ import { useEvaluation, useMeasurements, useTrend } from '../hooks/useBodyComp';
 import { AiEvaluation } from './AiEvaluation';
 import { MeasurementEntry } from './MeasurementEntry';
 import { OnTrackCard } from './OnTrackCard';
+import { StartingTargetsCard } from './StartingTargetsCard';
 import { TrendChart } from './TrendChart';
 
 const WINDOWS = [30, 60, 90] as const;
@@ -116,8 +117,10 @@ export function BodyCompositionTab() {
             {(() => {
               const effective = evaluation.data?.trend ?? trend.data;
               return effective?.status === 'ok' ? (
-                <OnTrackCard trend={effective} goals={me.data?.goals} measurements={entries} />
-              ) : null;
+                <OnTrackCard trend={effective} user={me.data} measurements={entries} />
+              ) : (
+                <StartingTargetsCard user={me.data} weightKg={latest?.weightKg} trend={effective} />
+              );
             })()}
 
             {latest?.tapeCm && Object.keys(latest.tapeCm).length > 0 ? (

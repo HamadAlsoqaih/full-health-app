@@ -422,3 +422,77 @@ describe('computeTrend — maintenance estimate', () => {
     expect(result.estimatedMaintenanceCalories).toBeGreaterThan(2350);
   });
 });
+
+describe('computeTrend — early water loss', () => {
+  // A diet that started 42 days ago: 2 kg of water and glycogen in week one,
+  // then a steady 0.5 kg/week of real loss on 2000 kcal.
+  const measurements: BodyMeasurement[] = [];
+  const foodLog: FoodLogEntry[] = [];
+  for (let d = 42; d >= 0; d -= 1) {
+    const daysIn = 42 - d;
+    const water = Math.min(daysIn, 7) * (2 / 7);
+    measurements.push(measurement(d, 90 - water - (daysIn / 7) * 0.5));
+    foodLog.push(foodDay(d, 2000, 150));
+  }
+  const base = { measurements, foodLog, now: NOW, windowDays: 42, goals: { goal: 'cut' as const } };
+
+  it('reads the water drop as a huge deficit when the start is not known', () => {
+    const result = computeTrend(base);
+    if (result.status !== 'ok') throw new Error('unreachable');
+    expect(result.earlyDaysSkippedUntil).toBeUndefined();
+    expect(result.estimatedMaintenanceCalories).toBeGreaterThan(2700);
+  });
+
+  it('skips the first two weeks of the diet and finds the real maintenance', () => {
+    const result = computeTrend({ ...base, dietStartDate: dayBefore(42) });
+    if (result.status !== 'ok') throw new Error('unreachable');
+    expect(result.earlyDaysSkippedUntil).toBe(dayBefore(28));
+    expect(result.fromDate).toBe(dayBefore(28));
+    // 2000 + 0.5 × 1100.
+    expect(result.estimatedMaintenanceCalories).toBe(2550);
+  });
+
+  it('reports insufficient data while still inside the water phase', () => {
+    // Data that begins with a diet started 20 days ago.
+    const recent = {
+      ...base,
+      measurements: measurements.filter((m) => m.date >= dayBefore(20)),
+      foodLog: foodLog.filter((f) => f.date >= dayBefore(20)),
+      dietStartDate: dayBefore(20),
+    };
+    const result = computeTrend(recent);
+    expect(result.status).toBe('insufficient-data');
+    if (result.status !== 'insufficient-data') throw new Error('unreachable');
+    expect(result.earlyDaysSkippedUntil).toBe(dayBefore(6));
+  });
+
+  it('does not skip when weigh-ins predate the diet start', () => {
+    // History from before the account existed: no fresh water phase to skip.
+    const result = computeTrend({ ...base, dietStartDate: dayBefore(20) });
+    if (result.status !== 'ok') throw new Error('unreachable');
+    expect(result.earlyDaysSkippedUntil).toBeUndefined();
+  });
+});
+
+describe('computeTrend — partial days', () => {
+  it('leaves days under 60% of the median out of the averages', () => {
+    const measurements: BodyMeasurement[] = [];
+    const foodLog: FoodLogEntry[] = [];
+    for (let d = 28; d >= 0; d -= 1) {
+      measurements.push(measurement(d, 80));
+      // Every fourth day only breakfast was logged.
+      foodLog.push(foodDay(d, d % 4 === 0 ? 600 : 2500, 150));
+    }
+    const result = computeTrend({
+      measurements,
+      foodLog,
+      now: NOW,
+      windowDays: 30,
+      goals: { goal: 'maintain' },
+    });
+    if (result.status !== 'ok') throw new Error('unreachable');
+    expect(result.partialDays).toHaveLength(8);
+    expect(result.avgDailyCalories).toBe(2500);
+    expect(result.dailyCalories).toHaveLength(29);
+  });
+});

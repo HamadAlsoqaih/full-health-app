@@ -79,6 +79,8 @@ const FULL_TREND: TrendResult = {
   avgDailyProteinG: 155,
   daysWithFoodLogs: 24,
   estimatedMaintenanceCalories: 2400,
+  dailyCalories: [],
+  partialDays: [],
   recommendation: {
     action: 'hold-calories',
     secondaryActions: [],

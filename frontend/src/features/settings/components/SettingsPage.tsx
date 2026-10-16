@@ -19,6 +19,7 @@ import { useAuthActions, useMe } from '@/features/auth/hooks/useAuth';
 import { authApi } from '@/features/auth/api';
 import { settingsApi } from '../api';
 import { PremiumUpsell } from './PremiumUpsell';
+import { BodyProfileCard } from './BodyProfileCard';
 import { config } from '@/shared/lib/config';
 import { DemoScenarioCard } from '@/demo/DemoScenarioCard';
 
@@ -120,6 +121,13 @@ export function SettingsPage() {
             </p>
           </div>
         </Card>
+
+        <BodyProfileCard
+          key={user.body ? JSON.stringify(user.body) : 'empty'}
+          user={user}
+          saving={update.isPending}
+          onSave={(patch) => update.mutate(patch)}
+        />
 
         <Card>
           <div className="flex flex-col gap-3">

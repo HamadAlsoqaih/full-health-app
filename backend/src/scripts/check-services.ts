@@ -165,6 +165,8 @@ const SAMPLE_TREND: ComputedTrend = {
   avgDailyProteinG: 155,
   daysWithFoodLogs: 24,
   estimatedMaintenanceCalories: 2400,
+  dailyCalories: [],
+  partialDays: [],
   recommendation: {
     action: 'hold-calories',
     secondaryActions: [],

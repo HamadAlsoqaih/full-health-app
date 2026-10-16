@@ -47,6 +47,18 @@ const PROTEIN_FLOOR_G_PER_KG = 1.6;
 /** Largest daily calorie change this will ever suggest. */
 const MAX_CALORIE_DELTA = 500;
 
+/**
+ * Days after a diet starts that are left out of the trend.
+ *
+ * The first one to two weeks of a deficit drop glycogen and the water bound to
+ * it, often 1–2 kg, which is not fat. Read through 7700 kcal/kg it looks like a
+ * deficit of well over 1000 kcal a day and drags maintenance far too high.
+ */
+export const EARLY_WATER_DAYS = 14;
+
+/** A logged day below this share of the median is treated as partially logged. */
+export const PARTIAL_DAY_SHARE = 0.6;
+
 /** Default weekly rate per goal, when the user set no explicit target. */
 const DEFAULT_TARGET_RATE: Record<Goals['goal'], number> = {
   cut: -0.5,
@@ -62,6 +74,8 @@ export interface TrendInput {
   now: Date;
   /** Analysis window. */
   windowDays: number;
+  /** When the user started their current goal; the next EARLY_WATER_DAYS are skipped. */
+  dietStartDate?: string;
 }
 
 const toDayNumber = (isoDate: string): number =>
@@ -210,10 +224,23 @@ function buildRecommendation(
  * user for their first fortnight.
  */
 export function computeTrend(input: TrendInput): TrendResult {
-  const { measurements, foodLog, goals, now, windowDays } = input;
+  const { measurements, foodLog, goals, now, windowDays, dietStartDate } = input;
 
-  const windowStart = new Date(now.getTime() - windowDays * 86_400_000).toISOString().slice(0, 10);
+  const naturalStart = new Date(now.getTime() - windowDays * 86_400_000).toISOString().slice(0, 10);
   const windowEnd = now.toISOString().slice(0, 10);
+
+  // Skip the early water-loss phase when it overlaps the window.
+  const earlyEnd = dietStartDate
+    ? new Date(Date.parse(`${dietStartDate}T00:00:00Z`) + EARLY_WATER_DAYS * 86_400_000)
+        .toISOString()
+        .slice(0, 10)
+    : undefined;
+  // Weigh-ins from before the diet start mean the history predates it (an
+  // import, or a goal set late), so there is no fresh water phase to skip.
+  const predates = dietStartDate !== undefined && measurements.some((m) => m.date < dietStartDate);
+  const skipping = earlyEnd !== undefined && earlyEnd > naturalStart && !predates;
+  const windowStart = skipping ? (earlyEnd as string) : naturalStart;
+  const skipInfo = skipping ? { earlyDaysSkippedUntil: earlyEnd as string } : {};
 
   const inWindow = measurements.filter((m) => m.date >= windowStart && m.date <= windowEnd);
   const points = latestPerDay(inWindow);
@@ -246,6 +273,7 @@ export function computeTrend(input: TrendInput): TrendResult {
       daysNeeded: Math.max(0, daysNeeded),
       weightEntryCount: points.length,
       daysWithFoodLogs,
+      ...skipInfo,
     };
   }
 
@@ -260,6 +288,20 @@ export function computeTrend(input: TrendInput): TrendResult {
     day.proteinG += entry.proteinG;
     loggedDays.set(entry.date, day);
   }
+
+  const dailyCalories = [...loggedDays.entries()]
+    .map(([date, day]) => ({ date, calories: Math.round(day.calories) }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  // A day far below the user's own norm is almost always logged in part — a
+  // forgotten dinner, not a 900 kcal day. Counting it would pull the average
+  // and maintenance down, so it is listed instead of averaged.
+  const sortedCalories = dailyCalories.map((d) => d.calories).sort((a, b) => a - b);
+  const median = sortedCalories[Math.floor(sortedCalories.length / 2)] ?? 0;
+  const partialDays = dailyCalories
+    .filter((d) => d.calories < median * PARTIAL_DAY_SHARE)
+    .map((d) => d.date);
+  for (const date of partialDays) loggedDays.delete(date);
 
   // Averaged over days that have any food logged, not over the whole window: a day
   // the user never opened the app is missing data, not a zero-calorie day.
@@ -299,6 +341,9 @@ export function computeTrend(input: TrendInput): TrendResult {
     avgDailyProteinG: Math.round(avgDailyProteinG),
     daysWithFoodLogs,
     estimatedMaintenanceCalories,
+    dailyCalories,
+    partialDays,
+    ...skipInfo,
     recommendation: buildRecommendation(
       ratePerWeekKg,
       goals,
