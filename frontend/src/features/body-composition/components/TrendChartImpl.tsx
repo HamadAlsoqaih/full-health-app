@@ -97,6 +97,13 @@ export default function TrendChartImpl({ measurements, units }: TrendChartProps)
             }}
             // Recharts types the value loosely, so it is stringified rather
             // than asserted to a number.
+            labelFormatter={(label) =>
+              new Date(`${String(label)}T00:00:00Z`).toLocaleDateString(undefined, {
+                weekday: 'short',
+                day: 'numeric',
+                month: 'short',
+              })
+            }
             formatter={(value) => [
               `${String(value)} ${units === 'metric' ? 'kg' : 'lb'}`,
               'Weight',

@@ -19,6 +19,8 @@ import { useAuthActions, useMe } from '@/features/auth/hooks/useAuth';
 import { authApi } from '@/features/auth/api';
 import { settingsApi } from '../api';
 import { PremiumUpsell } from './PremiumUpsell';
+import { config } from '@/shared/lib/config';
+import { DemoScenarioCard } from '@/demo/DemoScenarioCard';
 
 function Toggle({
   label,
@@ -105,6 +107,8 @@ export function SettingsPage() {
   return (
     <Screen title="Settings">
       <div className="flex flex-col gap-4">
+        {config.demoMode ? <DemoScenarioCard /> : null}
+
         <Card>
           <div className="flex flex-col gap-1">
             <h2 className="text-sm font-medium text-text-muted">Account</h2>

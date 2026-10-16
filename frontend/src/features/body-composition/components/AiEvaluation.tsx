@@ -83,6 +83,37 @@ function Recommendation({ trend, units }: { trend: TrendResult; units: UnitSyste
         </p>
       ) : null}
 
+      <details className="rounded-lg border border-border p-3 text-sm">
+        <summary className="cursor-pointer font-medium text-text">What these numbers mean</summary>
+        <dl className="mt-2 flex flex-col gap-2 text-text-muted">
+          <div>
+            <dt className="font-medium text-text">Change</dt>
+            <dd>Your weight at the end of the window minus the start.</dd>
+          </div>
+          <div>
+            <dt className="font-medium text-text">Per week</dt>
+            <dd>
+              The slope of a straight line fitted through every weigh-in, so one heavy or light day
+              does not swing it. This is the number that matters most.
+            </dd>
+          </div>
+          <div>
+            <dt className="font-medium text-text">Avg intake</dt>
+            <dd>
+              Average calories on the days you logged food. Days you did not log are skipped, not
+              counted as zero.
+            </dd>
+          </div>
+          <div>
+            <dt className="font-medium text-text">Est. maintenance</dt>
+            <dd>
+              Roughly what you could eat to hold your weight, worked out from your intake and how
+              your weight moved (about 7,700 kcal per kg). It is only as accurate as your logging.
+            </dd>
+          </div>
+        </dl>
+      </details>
+
       <p className="text-xs text-text-muted">
         These figures are calculated from your own logs. They are not medical advice.
       </p>

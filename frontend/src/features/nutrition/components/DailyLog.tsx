@@ -12,6 +12,8 @@ import { ErrorState } from '@/shared/components/ErrorState';
 import { Skeleton } from '@/shared/components/Skeleton';
 import { useToast } from '@/shared/components/Toast';
 import { useDailyLog, useDeleteLogEntry } from '../hooks/useDailyLog';
+import { useMe } from '@/features/auth/hooks/useAuth';
+import { macroTargets } from '@/shared/lib/macroTargets';
 
 const MEAL_ORDER: MealSlot[] = ['breakfast', 'lunch', 'dinner', 'snack'];
 
@@ -27,11 +29,16 @@ export function DailyLog({ date }: { date: string }) {
   const toast = useToast();
   const log = useDailyLog(date);
   const remove = useDeleteLogEntry(date);
+  const goals = useMe(true).data?.goals;
 
   if (log.isLoading) return <Skeleton lines={4} className="h-16 w-full" label="Loading log" />;
   if (log.isError) return <ErrorState error={log.error} onRetry={() => void log.refetch()} />;
 
   const entries = log.data ?? [];
+  const targets =
+    goals?.targetCalories !== undefined && goals.targetProteinG !== undefined
+      ? macroTargets(goals.targetCalories, goals.targetProteinG)
+      : undefined;
 
   if (entries.length === 0) {
     return (
@@ -62,19 +69,51 @@ export function DailyLog({ date }: { date: string }) {
   return (
     <div className="flex flex-col gap-4">
       <Card>
-        <dl className="grid grid-cols-4 gap-2 text-center">
-          {[
-            ['kcal', totals.calories],
-            ['Protein', totals.proteinG],
-            ['Carbs', totals.carbsG],
-            ['Fat', totals.fatG],
-          ].map(([label, value]) => (
-            <div key={label as string} className="flex flex-col">
-              <dt className="text-xs text-text-muted">{label as string}</dt>
-              <dd className="text-lg font-semibold text-text">{Math.round(value as number)}</dd>
-            </div>
-          ))}
+        <dl className="flex flex-col gap-3">
+          {(
+            [
+              ['Calories', totals.calories, goals?.targetCalories, 'kcal'],
+              ['Protein', totals.proteinG, targets?.proteinG, 'g'],
+              ['Carbs', totals.carbsG, targets?.carbsG, 'g'],
+              ['Fat', totals.fatG, targets?.fatG, 'g'],
+            ] as Array<[string, number, number | undefined, string]>
+          ).map(([label, value, target, unit]) => {
+            const logged = Math.round(value);
+            const over = target !== undefined && logged > target;
+            return (
+              <div key={label} className="flex flex-col gap-1">
+                <div className="flex items-baseline justify-between gap-2">
+                  <dt className="text-sm text-text-muted">{label}</dt>
+                  <dd className="text-sm text-text">
+                    <span className="font-semibold">{logged}</span>
+                    {target !== undefined ? (
+                      <span className="text-text-muted">
+                        {' '}
+                        / {target} {unit}
+                      </span>
+                    ) : (
+                      <span className="text-text-muted"> {unit}</span>
+                    )}
+                  </dd>
+                </div>
+                {target !== undefined && target > 0 ? (
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-raised">
+                    <div
+                      className={`h-full rounded-full ${over ? 'bg-warning' : 'bg-accent'}`}
+                      style={{ width: `${Math.min(100, (logged / target) * 100)}%` }}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
         </dl>
+        {targets ? (
+          <p className="mt-3 text-xs text-text-muted">
+            Carbs and fat targets are worked out from your calorie and protein targets: fat is 25%
+            of calories, carbs fill the rest.
+          </p>
+        ) : null}
       </Card>
 
       {grouped

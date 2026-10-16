@@ -11,6 +11,7 @@ import { formatLength, formatWeight } from '@/shared/lib/units';
 import { useEvaluation, useMeasurements, useTrend } from '../hooks/useBodyComp';
 import { AiEvaluation } from './AiEvaluation';
 import { MeasurementEntry } from './MeasurementEntry';
+import { OnTrackCard } from './OnTrackCard';
 import { TrendChart } from './TrendChart';
 
 const WINDOWS = [30, 60, 90] as const;
@@ -103,10 +104,21 @@ export function BodyCompositionTab() {
                 ) : null}
 
                 <TrendChart measurements={entries} units={units} />
+                <p className="text-xs text-text-muted">
+                  Tap or drag across the chart to see each weigh-in. Day-to-day jumps of 1–2 kg are
+                  mostly water and food, so judge the line over weeks, not the single points.
+                </p>
               </div>
             </Card>
 
             <AiEvaluation evaluation={evaluation.data} trend={trend.data} units={units} />
+
+            {(() => {
+              const effective = evaluation.data?.trend ?? trend.data;
+              return effective?.status === 'ok' ? (
+                <OnTrackCard trend={effective} goals={me.data?.goals} />
+              ) : null;
+            })()}
 
             {latest?.tapeCm && Object.keys(latest.tapeCm).length > 0 ? (
               <Card>

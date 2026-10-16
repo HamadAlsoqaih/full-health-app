@@ -17,7 +17,6 @@ import type {
   BodyCompEvaluation,
   BodyMeasurement,
   BodyMeasurementInput,
-  ComputedTrend,
   CustomFood,
   CustomFoodInput,
   Exercise,
@@ -37,6 +36,7 @@ import type {
 } from '@app/shared-types';
 import type { SessionStore } from '@/shared/lib/apiClient';
 import { toLocalDateIso } from '@/shared/lib/dates';
+import { computeTrend as computeTrendRules } from '../../../backend/src/services/body-composition/trend-rules';
 
 const STATE_KEY = 'fha.demo.v1';
 
@@ -236,7 +236,29 @@ function food(
   };
 }
 
+/**
+ * Sample-data stories, so each outcome of the on-track check can be seen.
+ *
+ * Every scenario assumes a maintenance of about 2,500 kcal and a cut at
+ * -0.5 kg/week; intake is set to whatever produces that scenario's rate at
+ * ~7,700 kcal per kg, so the numbers hang together the way real logs would.
+ */
+export const DEMO_SCENARIOS = [
+  { id: 'on-track', label: 'On track', ratePerWeekKg: -0.5 },
+  { id: 'too-slow', label: 'Losing too slowly', ratePerWeekKg: -0.2 },
+  { id: 'too-fast', label: 'Losing too fast', ratePerWeekKg: -1.1 },
+  { id: 'stalled', label: 'Weight stalled', ratePerWeekKg: 0 },
+  { id: 'gaining', label: 'Gaining on a cut', ratePerWeekKg: 0.35 },
+] as const;
+
+export type DemoScenario = (typeof DEMO_SCENARIOS)[number]['id'];
+
+const DEMO_MAINTENANCE_KCAL = 2500;
+/** Calories in one seeded day at serving multiplier 1, measured from the menu below. */
+const BASE_DAY_KCAL = 1945;
+
 interface DemoState {
+  scenario: DemoScenario;
   user: AuthUser;
   routines: Routine[];
   workoutLogs: WorkoutLog[];
@@ -288,7 +310,11 @@ function makeLogEntry(
   return entry;
 }
 
-function seed(): DemoState {
+function seed(scenario: DemoScenario = 'on-track'): DemoState {
+  const story = DEMO_SCENARIOS.find((d) => d.id === scenario) ?? DEMO_SCENARIOS[0];
+  const intakeKcal = DEMO_MAINTENANCE_KCAL + (story.ratePerWeekKg * 7700) / 7;
+  const portion = (n: number) =>
+    Math.max(0.25, Math.round(((n * intakeKcal) / BASE_DAY_KCAL) * 4) / 4);
   const now = new Date().toISOString();
   const user: AuthUser = {
     id: 'demo-user',
@@ -386,7 +412,7 @@ function seed(): DemoState {
   }
   workoutLogs.reverse();
 
-  // Weigh-ins every few days: 86.0 kg trending down about 0.45 kg/week.
+  // Weigh-ins every few days from 86 kg, moving at the scenario's rate.
   const measurements: BodyMeasurement[] = [];
   for (let day = 30; day >= 0; day -= 3) {
     const date = toLocalDateIso(daysAgo(day));
@@ -395,8 +421,8 @@ function seed(): DemoState {
       id: uuid(),
       clientId: uuid(),
       date,
-      weightKg: round(86 - ((30 - day) / 7) * 0.45 + wobble),
-      bodyFatPct: round(21 - ((30 - day) / 30) * 1.2),
+      weightKg: round(86 + ((30 - day) / 7) * story.ratePerWeekKg + wobble),
+      bodyFatPct: round(21 + ((30 - day) / 30) * story.ratePerWeekKg * 2.4),
       ...(day % 9 === 0 ? { tapeCm: { waist: round(92 - (30 - day) * 0.06), neck: 39 } } : {}),
       createdAt: daysAgo(day, 8).toISOString(),
     });
@@ -408,16 +434,16 @@ function seed(): DemoState {
   for (let day = 14; day >= 1; day--) {
     const date = toLocalDateIso(daysAgo(day));
     foodLog.push(
-      makeLogEntry(byId('usda:oats'), date, 1.5, 'breakfast'),
-      makeLogEntry(byId('off:whey'), date, 1, 'breakfast'),
-      makeLogEntry(byId('usda:banana'), date, 1, 'breakfast'),
-      makeLogEntry(byId('usda:chicken-breast'), date, 2, 'lunch'),
-      makeLogEntry(byId('usda:white-rice'), date, 1.5, 'lunch'),
-      makeLogEntry(byId('usda:broccoli'), date, 1, 'lunch'),
-      makeLogEntry(byId(day % 2 ? 'usda:salmon' : 'usda:beef-mince'), date, 2, 'dinner'),
-      makeLogEntry(byId('usda:sweet-potato'), date, 1, 'dinner'),
-      makeLogEntry(byId('off:greek-yogurt'), date, 1, 'snack'),
-      makeLogEntry(byId('usda:dates'), date, 2, 'snack'),
+      makeLogEntry(byId('usda:oats'), date, portion(1.5), 'breakfast'),
+      makeLogEntry(byId('off:whey'), date, portion(1), 'breakfast'),
+      makeLogEntry(byId('usda:banana'), date, portion(1), 'breakfast'),
+      makeLogEntry(byId('usda:chicken-breast'), date, portion(2), 'lunch'),
+      makeLogEntry(byId('usda:white-rice'), date, portion(1.5), 'lunch'),
+      makeLogEntry(byId('usda:broccoli'), date, portion(1), 'lunch'),
+      makeLogEntry(byId(day % 2 ? 'usda:salmon' : 'usda:beef-mince'), date, portion(2), 'dinner'),
+      makeLogEntry(byId('usda:sweet-potato'), date, portion(1), 'dinner'),
+      makeLogEntry(byId('off:greek-yogurt'), date, portion(1), 'snack'),
+      makeLogEntry(byId('usda:dates'), date, portion(2), 'snack'),
     );
   }
   const today = toLocalDateIso(new Date());
@@ -442,7 +468,16 @@ function seed(): DemoState {
     },
   ];
 
-  return { user, routines, workoutLogs, measurements, foodLog, customFoods, estimates: [] };
+  return {
+    scenario: story.id,
+    user,
+    routines,
+    workoutLogs,
+    measurements,
+    foodLog,
+    customFoods,
+    estimates: [],
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -456,8 +491,12 @@ function load(): DemoState {
   try {
     const raw = localStorage.getItem(STATE_KEY);
     if (raw) {
-      memoryState = JSON.parse(raw) as DemoState;
-      return memoryState;
+      const parsed = JSON.parse(raw) as DemoState;
+      // State saved before scenarios existed is re-seeded rather than patched.
+      if (parsed.scenario) {
+        memoryState = parsed;
+        return memoryState;
+      }
     }
   } catch {
     // Fall through to a fresh seed.
@@ -499,88 +538,15 @@ function round(n: number, places = 1) {
   return Math.round(n * f) / f;
 }
 
+/** The backend's own trend arithmetic, so the demo shows exactly what the API would. */
 function computeTrend(state: DemoState, days: number): TrendResult {
-  const from = toLocalDateIso(daysAgo(days));
-  const points = state.measurements
-    .filter((m) => m.date >= from)
-    .sort((a, b) => a.date.localeCompare(b.date));
-  const loggedDays = new Set(state.foodLog.filter((e) => e.date >= from).map((e) => e.date));
-
-  const span =
-    points.length > 1
-      ? (Date.parse(points.at(-1)!.date) - Date.parse(points[0]!.date)) / 86_400_000
-      : 0;
-
-  if (points.length < 3 || span < 7 || loggedDays.size < 5) {
-    const reasons: Array<'not-enough-weight-entries' | 'span-too-short' | 'not-enough-food-logs'> =
-      [];
-    if (points.length < 3) reasons.push('not-enough-weight-entries');
-    if (span < 7) reasons.push('span-too-short');
-    if (loggedDays.size < 5) reasons.push('not-enough-food-logs');
-    return {
-      status: 'insufficient-data',
-      reasons,
-      daysNeeded: Math.max(0, Math.ceil(7 - span)),
-      weightEntryCount: points.length,
-      daysWithFoodLogs: loggedDays.size,
-    };
-  }
-
-  // Least-squares slope, kg per day.
-  const t0 = Date.parse(points[0]!.date);
-  const xs = points.map((p) => (Date.parse(p.date) - t0) / 86_400_000);
-  const ys = points.map((p) => p.weightKg);
-  const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
-  const my = ys.reduce((a, b) => a + b, 0) / ys.length;
-  const num = xs.reduce((s, x, i) => s + (x - mx) * (ys[i]! - my), 0);
-  const den = xs.reduce((s, x) => s + (x - mx) ** 2, 0) || 1;
-  const slopePerDay = num / den;
-  const ratePerWeekKg = round(slopePerDay * 7, 2);
-
-  const dayTotals = new Map<string, { cal: number; protein: number }>();
-  for (const e of state.foodLog) {
-    if (e.date < from) continue;
-    const t = dayTotals.get(e.date) ?? { cal: 0, protein: 0 };
-    t.cal += e.calories;
-    t.protein += e.proteinG;
-    dayTotals.set(e.date, t);
-  }
-  const totals = [...dayTotals.values()];
-  const avgDailyCalories = Math.round(totals.reduce((s, t) => s + t.cal, 0) / totals.length);
-  const avgDailyProteinG = Math.round(totals.reduce((s, t) => s + t.protein, 0) / totals.length);
-  const estimatedMaintenanceCalories = Math.round(avgDailyCalories - slopePerDay * 7700);
-
-  const direction = ratePerWeekKg < -0.1 ? 'losing' : ratePerWeekKg > 0.1 ? 'gaining' : 'holding';
-  const target = state.user.goals?.targetRateKgPerWeek ?? -0.5;
-  const gap = target - ratePerWeekKg;
-  const delta = Math.abs(gap) < 0.15 ? 0 : Math.round((gap * 7700) / 7 / 50) * 50;
-
-  const trend: ComputedTrend = {
-    status: 'ok',
-    fromDate: points[0]!.date,
-    toDate: points.at(-1)!.date,
-    days: Math.round(span),
-    startWeightKg: points[0]!.weightKg,
-    endWeightKg: points.at(-1)!.weightKg,
-    weightChangeKg: round(points.at(-1)!.weightKg - points[0]!.weightKg),
-    ratePerWeekKg,
-    direction,
-    avgDailyCalories,
-    avgDailyProteinG,
-    daysWithFoodLogs: loggedDays.size,
-    estimatedMaintenanceCalories,
-    recommendation: {
-      action: delta === 0 ? 'hold-calories' : delta < 0 ? 'reduce-calories' : 'increase-calories',
-      secondaryActions: avgDailyProteinG < 160 ? ['increase-protein'] : [],
-      calorieDeltaPerDay: delta,
-      proteinTargetG: state.user.goals?.targetProteinG ?? 170,
-      rationale:
-        delta === 0
-          ? `You are losing ${Math.abs(ratePerWeekKg)} kg/week, close to your ${Math.abs(target)} kg/week target. Keep intake where it is.`
-          : `Your rate of ${ratePerWeekKg} kg/week is off your ${target} kg/week target; adjust intake by ${delta} kcal/day.`,
-    },
-  };
-  return trend;
+  return computeTrendRules({
+    measurements: state.measurements,
+    foodLog: state.foodLog,
+    ...(state.user.goals ? { goals: state.user.goals } : {}),
+    now: new Date(),
+    windowDays: days,
+  });
 }
 
 function evaluation(state: DemoState): BodyCompEvaluation {
@@ -962,7 +928,11 @@ export const demoFetch: typeof globalThis.fetch = async (input, init) => {
 };
 
 /** Throws away every change and restores the sample data. */
-export function resetDemoData() {
-  memoryState = seed();
+export function resetDemoData(scenario: DemoScenario = load().scenario) {
+  memoryState = seed(scenario);
   save();
+}
+
+export function getDemoScenario(): DemoScenario {
+  return load().scenario;
 }

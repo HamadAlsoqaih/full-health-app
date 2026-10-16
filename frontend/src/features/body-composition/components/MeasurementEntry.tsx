@@ -95,6 +95,7 @@ export function MeasurementEntry({ units, onDone }: { units: UnitSystem; onDone:
         label="Weight"
         unit={units === 'metric' ? 'kg' : 'lb'}
         placeholder={units === 'metric' ? '88.4' : '195'}
+        hint="Weigh at the same time each day: in the morning, after the bathroom, before eating or drinking."
         value={weight}
         onChange={(event) => setWeight(event.target.value)}
         {...(errors.weight ? { error: errors.weight } : {})}
@@ -104,6 +105,7 @@ export function MeasurementEntry({ units, onDone }: { units: UnitSystem; onDone:
         label="Body fat"
         optional
         unit="%"
+        hint="From a smart scale, calipers or a DEXA scan. Stick to one method: different methods can disagree by several percent."
         value={bodyFat}
         onChange={(event) => setBodyFat(event.target.value)}
         {...(errors.bodyFat ? { error: errors.bodyFat } : {})}
@@ -117,6 +119,13 @@ export function MeasurementEntry({ units, onDone }: { units: UnitSystem; onDone:
       >
         {showTape ? 'Hide tape measurements' : 'Add tape measurements (optional)'}
       </button>
+
+      {showTape ? (
+        <p className="-mt-2 text-xs text-text-muted">
+          Measure relaxed, with the tape snug but not pressing into the skin. Waist at the navel,
+          hips at the widest point, arm and thigh at the widest point.
+        </p>
+      ) : null}
 
       {showTape ? (
         <div className="grid grid-cols-2 gap-3">
