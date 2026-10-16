@@ -1,0 +1,8 @@
+// Cloudflare Workers Builds runs wrangler from the repository root, so the
+// config has to live here. It serves the built frontend as static assets; the
+// SPA fallback lets a reload on /app/overview reach the client-side router.
+{
+  "name": "full-health-app",
+  "compatibility_date": "2026-09-01",
+  "assets": { "directory": "./frontend/dist", "not_found_handling": "single-page-application" },
+}

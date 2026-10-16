@@ -29,4 +29,10 @@ export const config = {
     },
   },
   isDev: env.DEV,
+  /**
+   * TEMPORARY. Runs the app against an in-browser demo backend with sample data
+   * and skips sign-in (src/demo/). On by default until the real API is deployed;
+   * set VITE_DEMO_MODE=false to talk to the API. Always off under Vitest.
+   */
+  demoMode: env.MODE !== 'test' && env.VITE_DEMO_MODE !== 'false',
 } as const;

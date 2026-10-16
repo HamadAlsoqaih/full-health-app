@@ -13,6 +13,8 @@ import { createQueryClient } from '@/shared/lib/queryClient';
 import { ToastProvider } from '@/shared/components/Toast';
 import { ErrorBoundary } from '@/shared/components/ErrorBoundary';
 import { AppRouter } from '@/routes/AppRouter';
+import { config } from '@/shared/lib/config';
+import { demoFetch, demoSessionStore } from '@/demo/demoBackend';
 
 export function App() {
   // Created once per mount, not per render: a new QueryClient would drop the
@@ -22,7 +24,9 @@ export function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <ApiProvider>
+        <ApiProvider
+          {...(config.demoMode ? { fetchImpl: demoFetch, sessions: demoSessionStore } : {})}
+        >
           <ToastProvider>
             <BrowserRouter>
               <AppRouter />
