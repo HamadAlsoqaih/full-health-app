@@ -5,13 +5,19 @@
  * lets the user adopt the suggestion in one tap. Nothing changes until they do.
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { AuthUser, ComputedTrend, Goals } from '@app/shared-types';
+import type { AuthUser, BodyMeasurement, ComputedTrend, Goals } from '@app/shared-types';
 import { Button, Card } from '@/shared/components/Field';
 import { useToast } from '@/shared/components/Toast';
 import { useApi } from '@/shared/lib/ApiProvider';
 import { queryKeys } from '@/shared/lib/queryClient';
 import { authApi } from '@/features/auth/api';
-import { onTrackVerdict, type OnTrackStatus } from '../lib/onTrack';
+import { bodyInsights, onTrackVerdict, type Insight, type OnTrackStatus } from '../lib/onTrack';
+
+const INSIGHT_TONE: Record<Insight['tone'], string> = {
+  good: 'border-success text-text',
+  warn: 'border-warning text-text',
+  info: 'border-border text-text',
+};
 
 const BADGE: Record<OnTrackStatus, string> = {
   'on-track': 'border-success text-success',
@@ -27,11 +33,20 @@ const ROWS = [
   ['Fat', 'fatG', 'g'],
 ] as const;
 
-export function OnTrackCard({ trend, goals }: { trend: ComputedTrend; goals: Goals | undefined }) {
+export function OnTrackCard({
+  trend,
+  goals,
+  measurements,
+}: {
+  trend: ComputedTrend;
+  goals: Goals | undefined;
+  measurements: BodyMeasurement[];
+}) {
   const { client } = useApi();
   const queryClient = useQueryClient();
   const toast = useToast();
   const verdict = onTrackVerdict(trend, goals);
+  const insights = bodyInsights(trend, measurements, verdict);
 
   const apply = useMutation({
     mutationFn: () =>
@@ -63,7 +78,11 @@ export function OnTrackCard({ trend, goals }: { trend: ComputedTrend; goals: Goa
           </span>
         </div>
 
-        <p className="text-sm text-text">{verdict.detail}</p>
+        <p className="text-sm text-text">
+          {insights.some((i) => i.id === 'recomp')
+            ? "Your weight is flat, but your waist says you're losing fat, so this is working. If you also want the scale to move, the suggestion below gets you to your planned rate."
+            : verdict.detail}
+        </p>
 
         <table className="w-full text-sm">
           <thead>
@@ -106,22 +125,25 @@ export function OnTrackCard({ trend, goals }: { trend: ComputedTrend; goals: Goa
           </tbody>
         </table>
 
-        {verdict.status !== 'on-track' &&
-        verdict.current &&
-        Math.abs(trend.avgDailyCalories - verdict.current.calories) > 150 ? (
-          <p className="text-sm text-warning">
-            You're eating about {Math.abs(trend.avgDailyCalories - verdict.current.calories)} kcal a
-            day {trend.avgDailyCalories > verdict.current.calories ? 'over' : 'under'} your target.
-            Hitting the target matters as much as the target itself.
-          </p>
+        {insights.length > 0 ? (
+          <ul className="flex flex-col gap-2">
+            {insights.map((insight) => (
+              <li
+                key={insight.id}
+                className={`border-l-2 pl-3 text-sm ${INSIGHT_TONE[insight.tone]}`}
+              >
+                {insight.text}
+              </li>
+            ))}
+          </ul>
         ) : null}
 
         <p className="text-xs text-text-muted">
           {verdict.status === 'on-track'
             ? 'Suggested calories are what you already eat, since that is producing your planned rate.'
-            : `Suggested calories are your estimated maintenance (${trend.estimatedMaintenanceCalories} kcal) adjusted for your planned ${verdict.targetRateKgPerWeek} kg/week.`}{' '}
-          Protein is at least 1.6 g per kg of body weight; fat is 25% of calories and carbs fill the
-          rest. "You eat" is your average on logged days.
+            : `Suggested calories are your maintenance (${verdict.maintenanceCalories} kcal = ${trend.avgDailyCalories} eaten ${trend.ratePerWeekKg <= 0 ? '+' : '−'} ${Math.abs(trend.ratePerWeekKg)} kg/week ${trend.ratePerWeekKg <= 0 ? 'lost' : 'gained'} × 7700 ÷ 7) adjusted for your planned ${verdict.targetRateKgPerWeek} kg/week.`}{' '}
+          Protein is 1.6–2.2 g per kg of body weight (1.8 if your target is outside that); fat is at
+          least 0.8 g/kg and carbs fill the rest. "You eat" is your average on logged days.
         </p>
 
         {verdict.shouldChange ? (

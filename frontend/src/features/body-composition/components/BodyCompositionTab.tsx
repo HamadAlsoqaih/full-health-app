@@ -116,7 +116,7 @@ export function BodyCompositionTab() {
             {(() => {
               const effective = evaluation.data?.trend ?? trend.data;
               return effective?.status === 'ok' ? (
-                <OnTrackCard trend={effective} goals={me.data?.goals} />
+                <OnTrackCard trend={effective} goals={me.data?.goals} measurements={entries} />
               ) : null;
             })()}
 

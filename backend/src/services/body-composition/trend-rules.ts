@@ -273,7 +273,9 @@ export function computeTrend(input: TrendInput): TrendResult {
   const weightChangeKg = last.weightKg - first.weightKg;
 
   // Intake implied by the observed change: maintenance = intake − daily surplus.
-  const dailySurplus = (weightChangeKg * KCAL_PER_KG) / Math.max(1, spanDays);
+  // Taken from the fitted rate, not first-to-last: one heavy or light weigh-in at
+  // either end would otherwise move maintenance by hundreds of kcal.
+  const dailySurplus = (ratePerWeekKg * KCAL_PER_KG) / 7;
   const estimatedMaintenanceCalories = Math.round(avgDailyCalories - dailySurplus);
 
   const direction =

@@ -397,3 +397,28 @@ describe('computeTrend — recommendations', () => {
     expect(result.endWeightKg).toBeCloseTo(90 - 2, 1);
   });
 });
+
+describe('computeTrend — maintenance estimate', () => {
+  it('uses the fitted rate, so one noisy end weigh-in barely moves it', () => {
+    const measurements: BodyMeasurement[] = [];
+    const foodLog: FoodLogEntry[] = [];
+    for (let d = 28; d >= 0; d -= 1) {
+      // Flat at 80 kg, except a 1.5 kg water spike on the final day.
+      measurements.push(measurement(d, d === 0 ? 81.5 : 80));
+      foodLog.push(foodDay(d, 2500, 150));
+    }
+
+    const result = computeTrend({
+      measurements,
+      foodLog,
+      goals: { goal: 'maintain' },
+      now: NOW,
+      windowDays: 30,
+    });
+
+    if (result.status !== 'ok') throw new Error('unreachable');
+    // First-to-last would read +1.5 kg and put maintenance at ~2088. The fitted
+    // line is nearly flat, so maintenance stays close to the 2500 actually eaten.
+    expect(result.estimatedMaintenanceCalories).toBeGreaterThan(2350);
+  });
+});

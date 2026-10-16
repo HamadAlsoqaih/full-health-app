@@ -244,11 +244,33 @@ function food(
  * ~7,700 kcal per kg, so the numbers hang together the way real logs would.
  */
 export const DEMO_SCENARIOS = [
-  { id: 'on-track', label: 'On track', ratePerWeekKg: -0.5 },
-  { id: 'too-slow', label: 'Losing too slowly', ratePerWeekKg: -0.2 },
-  { id: 'too-fast', label: 'Losing too fast', ratePerWeekKg: -1.1 },
-  { id: 'stalled', label: 'Weight stalled', ratePerWeekKg: 0 },
-  { id: 'gaining', label: 'Gaining on a cut', ratePerWeekKg: 0.35 },
+  // leanShare: fraction of the weight change that is lean mass rather than fat.
+  // waistCmPerWeek: lets the recomposition case shrink at the waist while the
+  // scale stays flat.
+  { id: 'on-track', label: 'On track', ratePerWeekKg: -0.5, leanShare: 0.15, waistCmPerWeek: -0.6 },
+  {
+    id: 'too-slow',
+    label: 'Losing too slowly',
+    ratePerWeekKg: -0.2,
+    leanShare: 0.1,
+    waistCmPerWeek: -0.25,
+  },
+  {
+    id: 'too-fast',
+    label: 'Losing too fast',
+    ratePerWeekKg: -1.1,
+    leanShare: 0.45,
+    waistCmPerWeek: -0.9,
+  },
+  { id: 'stalled', label: 'Weight stalled', ratePerWeekKg: 0, leanShare: 0, waistCmPerWeek: 0 },
+  { id: 'recomp', label: 'Recomposition', ratePerWeekKg: 0, leanShare: 0, waistCmPerWeek: -0.5 },
+  {
+    id: 'gaining',
+    label: 'Gaining on a cut',
+    ratePerWeekKg: 0.35,
+    leanShare: 0.3,
+    waistCmPerWeek: 0.3,
+  },
 ] as const;
 
 export type DemoScenario = (typeof DEMO_SCENARIOS)[number]['id'];
@@ -417,21 +439,29 @@ function seed(scenario: DemoScenario = 'on-track'): DemoState {
   for (let day = 30; day >= 0; day -= 3) {
     const date = toLocalDateIso(daysAgo(day));
     const wobble = [0.2, -0.1, 0.3, 0, -0.2][day % 5]!;
+    const weeks = (30 - day) / 7;
+    const trendWeight = 86 + weeks * story.ratePerWeekKg;
+    const weightKg = round(trendWeight + wobble);
+    // Fat mass moves by the non-lean share of the trend; the day's wobble is water.
+    const recompFatKg = story.id === 'recomp' ? -0.35 * weeks : 0;
+    const fatKg = 86 * 0.21 + (1 - story.leanShare) * (trendWeight - 86) + recompFatKg;
     measurements.push({
       id: uuid(),
       clientId: uuid(),
       date,
-      weightKg: round(86 + ((30 - day) / 7) * story.ratePerWeekKg + wobble),
-      bodyFatPct: round(21 + ((30 - day) / 30) * story.ratePerWeekKg * 2.4),
-      ...(day % 9 === 0 ? { tapeCm: { waist: round(92 - (30 - day) * 0.06), neck: 39 } } : {}),
+      weightKg,
+      bodyFatPct: round((fatKg / weightKg) * 100),
+      ...(day % 6 === 0
+        ? { tapeCm: { waist: round(92 + weeks * story.waistCmPerWeek), neck: 39 } }
+        : {}),
       createdAt: daysAgo(day, 8).toISOString(),
     });
   }
 
-  // A full day of eating for each of the last 14 days, plus today so far.
+  // A full day of eating for each of the last 30 days, plus today so far.
   const byId = (id: string) => FOODS.find((f) => f.id === id)!;
   const foodLog: FoodLogEntry[] = [];
-  for (let day = 14; day >= 1; day--) {
+  for (let day = 30; day >= 1; day--) {
     const date = toLocalDateIso(daysAgo(day));
     foodLog.push(
       makeLogEntry(byId('usda:oats'), date, portion(1.5), 'breakfast'),

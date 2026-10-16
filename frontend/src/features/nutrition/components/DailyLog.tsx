@@ -14,6 +14,7 @@ import { useToast } from '@/shared/components/Toast';
 import { useDailyLog, useDeleteLogEntry } from '../hooks/useDailyLog';
 import { useMe } from '@/features/auth/hooks/useAuth';
 import { macroTargets } from '@/shared/lib/macroTargets';
+import { useMeasurements } from '@/features/body-composition/hooks/useBodyComp';
 
 const MEAL_ORDER: MealSlot[] = ['breakfast', 'lunch', 'dinner', 'snack'];
 
@@ -30,6 +31,8 @@ export function DailyLog({ date }: { date: string }) {
   const log = useDailyLog(date);
   const remove = useDeleteLogEntry(date);
   const goals = useMe(true).data?.goals;
+  // Newest first; the fat floor scales with current body weight.
+  const weightKg = useMeasurements().data?.[0]?.weightKg;
 
   if (log.isLoading) return <Skeleton lines={4} className="h-16 w-full" label="Loading log" />;
   if (log.isError) return <ErrorState error={log.error} onRetry={() => void log.refetch()} />;
@@ -37,7 +40,7 @@ export function DailyLog({ date }: { date: string }) {
   const entries = log.data ?? [];
   const targets =
     goals?.targetCalories !== undefined && goals.targetProteinG !== undefined
-      ? macroTargets(goals.targetCalories, goals.targetProteinG)
+      ? macroTargets(goals.targetCalories, goals.targetProteinG, weightKg)
       : undefined;
 
   if (entries.length === 0) {
@@ -110,8 +113,9 @@ export function DailyLog({ date }: { date: string }) {
         </dl>
         {targets ? (
           <p className="mt-3 text-xs text-text-muted">
-            Carbs and fat targets are worked out from your calorie and protein targets: fat is 25%
-            of calories, carbs fill the rest.
+            {weightKg !== undefined
+              ? `Fat is 0.8 g per kg of your body weight (${weightKg} kg); carbs fill the calories left after protein and fat.`
+              : 'Fat is 25% of calories until you log a weight; carbs fill the calories left after protein and fat.'}
           </p>
         ) : null}
       </Card>
